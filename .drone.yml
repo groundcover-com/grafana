@@ -63,6 +63,69 @@ environment:
 image_pull_secrets:
 - dockerconfigjson
 kind: pipeline
+name: pr-verify-starlark
+node:
+  type: no-parallel
+platform:
+  arch: amd64
+  os: linux
+services: []
+steps:
+- commands:
+  - echo $DRONE_RUNNER_NAME
+  image: alpine:3.15.6
+  name: identify-runner
+- commands:
+  - mkdir -p bin
+  - curl -fL -o bin/grabpl https://grafana-downloads.storage.googleapis.com/grafana-build-pipeline/v3.0.20/grabpl
+  - chmod +x bin/grabpl
+  image: byrnedo/alpine-curl:0.1.8
+  name: grabpl
+- commands:
+  - go build -o ./bin/build -ldflags '-extldflags -static' ./pkg/build/cmd
+  depends_on: []
+  environment:
+    CGO_ENABLED: 0
+  image: golang:1.19.3
+  name: compile-build-cmd
+- commands:
+  - curl -fLO https://github.com/bazelbuild/buildtools/releases/download/$${BUILDIFIER_VERSION}/buildifier-linux-amd64
+  - echo "$${BUILDIFIER_CHKSUM}  buildifier-linux-amd64" | sha256sum -c -s
+  - mv buildifier-linux-amd64 /bin/buildifier
+  - chmod +x /bin/buildifier
+  - ./bin/build verify-starlark .
+  depends_on:
+  - compile-build-cmd
+  environment:
+    BUILDIFIER_CHKSUM: 52bf6b102cb4f88464e197caac06d69793fa2b05f5ad50a7e7bf6fbd656648a3
+    BUILDIFIER_VERSION: 5.1.0
+    PATH: /usr/bin:/bin
+  image: byrnedo/alpine-curl:0.1.8
+  name: lint-starlark
+trigger:
+  event:
+  - pull_request
+  paths:
+    exclude:
+    - docs/**
+    - '*.md'
+    include:
+    - scripts/drone/**
+    - .drone.star
+type: docker
+volumes:
+- host:
+    path: /var/run/docker.sock
+  name: docker
+---
+clone:
+  retries: 3
+depends_on: []
+environment:
+  EDITION: oss
+image_pull_secrets:
+- dockerconfigjson
+kind: pipeline
 name: pr-test-frontend
 node:
   type: no-parallel
@@ -6439,6 +6502,6 @@ kind: secret
 name: aws_secret_access_key
 ---
 kind: signature
-hmac: a1be45b783375352bc7cf74eef3646d4545f1545407972f0e888eef2d13a1d49
+hmac: 43ab26767c467deb1652ad70d31eae19294cddc249ae1d16e24befe955ff97de
 
 ...
