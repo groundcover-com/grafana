@@ -92,3 +92,10 @@ COPY ./packaging/docker/run.sh /run.sh
 
 USER grafana
 ENTRYPOINT [ "/run.sh" ]
+
+
+ARG GF_VERSION
+FROM grafana/grafana:${GF_VERSION} as theatre
+
+COPY --from=js-builder /grafana/public ./public
+COPY --from=js-builder /grafana/tools ./tools
