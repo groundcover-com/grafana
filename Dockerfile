@@ -1,3 +1,5 @@
+ARG GF_VERSION
+
 FROM node:16-alpine3.15 as js-builder
 
 ENV NODE_OPTIONS=--max_old_space_size=8000
@@ -94,7 +96,6 @@ USER grafana
 ENTRYPOINT [ "/run.sh" ]
 
 
-ARG GF_VERSION
 FROM grafana/grafana:${GF_VERSION} as theatre
 
 COPY --from=js-builder /grafana/public ./public
