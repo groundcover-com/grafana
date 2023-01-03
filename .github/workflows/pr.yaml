@@ -36,11 +36,12 @@ jobs:
         with:
           registry-type: public
       -
-        name: Build & Push Docker Image
+        name: Build Docker Image
         uses: docker/build-push-action@v3
         with:
           context: .
           push: false
+          target: theatre
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          tags: grafana
+          tags: grafana-theatre
