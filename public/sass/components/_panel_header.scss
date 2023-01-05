@@ -1,12 +1,5 @@
 $panel-header-no-title-zindex: 1;
 
-.panel-header {
-  &:hover {
-    transition: background-color 0.1s ease-in-out;
-    background-color: $panel-header-hover-bg;
-  }
-}
-
 .panel-container--no-title {
   .panel-header {
     position: absolute;
@@ -32,15 +25,22 @@ $panel-header-no-title-zindex: 1;
 
 .panel-title {
   border: 0px;
-  font-weight: $font-weight-semi-bold;
   position: relative;
   width: 100%;
   display: flex;
   flex-wrap: nowrap;
-  justify-content: center;
-  height: $panel-header-height;
   line-height: $panel-header-height;
   align-items: center;
+  margin-top: 10px;
+  justify-content: space-between;
+  padding: 0 35px;
+  & h2 {
+    @import url('https://fonts.googleapis.com/css2?family=Lato:wght@700&display=swap');
+    font-family: 'Lato', sans-serif;
+    text-transform: uppercase;
+    font-size: 15px;
+    font-weight: 700;
+  }
 }
 
 .panel-menu-container {
