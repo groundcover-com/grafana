@@ -31,9 +31,8 @@ $panel-header-no-title-zindex: 1;
   flex-wrap: nowrap;
   line-height: $panel-header-height;
   align-items: center;
-  margin-top: 10px;
   justify-content: space-between;
-  padding: 0 35px;
+  padding: 0 35px 0 15px;
   & h2 {
     @import url('https://fonts.googleapis.com/css2?family=Lato:wght@700&display=swap');
     font-family: 'Lato', sans-serif;
