@@ -166,4 +166,3 @@ ENTRYPOINT [ "/run.sh" ]
 FROM grafana/grafana:${GF_VERSION} as groundcover
 
 COPY --from=js-builder /grafana/public ./public
-COPY --from=js-builder /grafana/tools ./tools
