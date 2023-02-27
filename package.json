@@ -17,6 +17,7 @@
     "e2e:enterprise:dev": "./e2e/start-and-run-suite enterprise dev",
     "e2e:enterprise:debug": "./e2e/start-and-run-suite enterprise debug",
     "test": "jest --notify --watch",
+    "test-ci": "jest",
     "test:coverage": "jest --coverage",
     "test:coverage:changes": "jest --coverage --changedSince=origin/main",
     "test:accessibility-report": "./scripts/generate-a11y-report.sh",

@@ -1,4 +1,5 @@
 # syntax=docker/dockerfile:1
+ARG GF_VERSION
 
 ARG BASE_IMAGE=alpine:3.15
 ARG JS_IMAGE=node:18-alpine3.15
@@ -160,3 +161,9 @@ COPY ${RUN_SH} /run.sh
 
 USER "$GF_UID"
 ENTRYPOINT [ "/run.sh" ]
+
+
+FROM grafana/grafana:${GF_VERSION} as groundcover
+
+COPY --from=js-builder /grafana/public ./public
+COPY --from=js-builder /grafana/tools ./tools
