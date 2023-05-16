@@ -10,7 +10,7 @@ import { SearchWrapper } from 'app/features/search';
 import { KioskMode } from 'app/types';
 
 import { MegaMenu } from '../MegaMenu/MegaMenu';
-import { NavBar } from '../NavBar/NavBar';
+// import { NavBar } from '../NavBar/NavBar';
 
 import { NavToolbar } from './NavToolbar';
 import { TopSearchBar } from './TopSearchBar';
@@ -28,7 +28,7 @@ export function AppChrome({ children }: Props) {
       <>
         {!state.chromeless && (
           <>
-            <NavBar />
+            {/* <NavBar /> */}
             <SearchWrapper />
             <CommandPalette />
           </>
