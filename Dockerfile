@@ -92,7 +92,7 @@ FROM ${GO_SRC} as go-src
 FROM ${JS_SRC} as js-src
 
 # Final stage
-FROM ${BASE_IMAGE}
+FROM ${BASE_IMAGE} as final
 
 LABEL maintainer="Grafana Labs <hello@grafana.com>"
 
@@ -186,5 +186,15 @@ FROM grafana/grafana:${GF_VERSION} as groundcover
 
 COPY --from=go-src /tmp/grafana/bin/grafana* /tmp/grafana/bin/*/grafana* ./bin/
 COPY --from=js-src /tmp/grafana/public ./public
-RUN grafana cli plugins install grafana-clickhouse-datasource && \
+
+USER 0
+
+ENV GF_PLUGIN_DIR="/usr/share/grafana/plugins" \
+    GF_PATHS_PLUGINS="/usr/share/grafana/plugins"
+
+RUN mkdir -p ${GF_PLUGIN_DIR} && \
+    chmod -R 777 ${GF_PLUGIN_DIR} && \
+    grafana cli plugins install grafana-clickhouse-datasource && \
     grafana cli plugins install marcusolsson-treemap-panel
+
+USER "$GF_UID"
