@@ -92,7 +92,7 @@ FROM ${GO_SRC} as go-src
 FROM ${JS_SRC} as js-src
 
 # Final stage
-FROM ${BASE_IMAGE} as final
+FROM ${BASE_IMAGE}
 
 LABEL maintainer="Grafana Labs <hello@grafana.com>"
 
