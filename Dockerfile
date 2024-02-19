@@ -40,7 +40,7 @@ ARG BINGO="true"
 
 # Install build dependencies
 RUN if grep -i -q alpine /etc/issue; then \
-      apk add --no-cache gcc g++ make git; \
+      apk add --no-cache binutils-gold gcc g++ make git; \
     fi
 
 WORKDIR /tmp/grafana
