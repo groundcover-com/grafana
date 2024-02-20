@@ -36,7 +36,7 @@ ARG COMMIT_SHA=""
 ARG BUILD_BRANCH=""
 ARG GO_BUILD_TAGS="oss"
 ARG WIRE_TAGS="oss"
-ARG BINGO="true"
+ARG BINGO="false"
 
 # Install build dependencies
 RUN if grep -i -q alpine /etc/issue; then \
