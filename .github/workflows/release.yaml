@@ -7,7 +7,7 @@ on:
 
 jobs:
   release:
-    runs-on: macos-14
+    runs-on: ubuntu-latest
     permissions:
       contents: write
       id-token: write
@@ -25,21 +25,21 @@ jobs:
         uses: docker/setup-buildx-action@v3
       -
         name: Login to Quay.io
-        uses: docker/login-action@v2
+        uses: docker/login-action@v3
         with:
           registry: quay.io
           username: ${{ secrets.QUAY_USERNAME }}
           password: ${{ secrets.QUAY_ROBOT_TOKEN }}
       -
         name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v1
+        uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-region: us-east-1
           role-to-assume: arn:aws:iam::125608480246:role/grafana-github-actions
       -
         name: Login to Amazon ECR Public
         id: login-ecr-public
-        uses: aws-actions/amazon-ecr-login@v1
+        uses: aws-actions/amazon-ecr-login@v2
         with:
           registry-type: public
       -
@@ -47,7 +47,7 @@ jobs:
         run: echo "GF_VERSION=$(npm pkg get version | tr -d '"')" >> $GITHUB_ENV
       -
         name: Build Docker Image
-        uses: docker/build-push-action@v4
+        uses: docker/build-push-action@v5
         with:
           context: .
           push: true
