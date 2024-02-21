@@ -3,13 +3,13 @@ ARG GF_VERSION
 
 ARG BASE_IMAGE=alpine:3.18.3
 ARG JS_IMAGE=node:18-alpine3.18
-ARG JS_PLATFORM=linux/amd64
+ARG BUILDPLATFORM=linux/amd64
 ARG GO_IMAGE=golang:1.20.8
 
 ARG GO_SRC=go-builder
 ARG JS_SRC=js-builder
 
-FROM --platform=${JS_PLATFORM} ${JS_IMAGE} as js-builder
+FROM --platform=${BUILDPLATFORM} ${JS_IMAGE} as js-builder
 
 ENV NODE_OPTIONS=--max_old_space_size=8000
 
@@ -30,7 +30,6 @@ COPY emails emails
 ENV NODE_ENV production
 RUN yarn build
 
-ARG BUILDPLATFORM=linux/amd64
 FROM --platform=${BUILDPLATFORM} ${GO_IMAGE} as go-builder
 
 ARG COMMIT_SHA=""
