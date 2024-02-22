@@ -41,10 +41,6 @@ ARG BINGO="true"
 # Install build dependencies
 RUN if grep -i -q alpine /etc/issue; then \
       apk add --no-cache gcc g++ make git; \
-    elif grep -i -q debian /etc/issue; then \
-      DEBIAN_FRONTEND=noninteractive && \
-      apt-get update && \
-      apt-get -y install gcc-aarch64-linux-gnu; \
     fi
 
 WORKDIR /tmp/grafana
@@ -74,7 +70,13 @@ COPY LICENSE ./
 ENV COMMIT_SHA=${COMMIT_SHA}
 ENV BUILD_BRANCH=${BUILD_BRANCH}
 
+FROM ${GO_SRC} as go-build-amd64
 RUN make build-go GO_BUILD_TAGS=${GO_BUILD_TAGS} WIRE_TAGS=${WIRE_TAGS}
+
+FROM ${GO_SRC} as go-build-arm64
+
+RUN apt-get update && \
+    apt-get -y install gcc-aarch64-linux-gnu;
 
 ENV GOARCH=arm64
 ENV CC=aarch64-linux-gnu-gcc
@@ -96,7 +98,8 @@ COPY ./scripts ./scripts
 COPY ./plugins-bundled ./plugins-bundled
 
 # helpers for COPY --from
-FROM ${GO_SRC} as go-src
+ARG TARGETARCH
+FROM go-build-${TARGETARCH} as go-src
 FROM ${JS_SRC} as js-src
 
 # Final stage
@@ -192,9 +195,8 @@ ENTRYPOINT [ "/run.sh" ]
 
 FROM grafana/grafana:${GF_VERSION}-ubuntu as groundcover
 
+COPY --from=go-src /tmp/grafana/bin/grafana* /tmp/grafana/bin/*/grafana* ./bin/
 COPY --from=js-src /tmp/grafana/public ./public
-ARG TARGETARCH
-COPY --from=go-src /tmp/grafana/bin/grafana* /tmp/grafana/bin/linux-${TARGETARCH}/grafana* ./bin/
 
 USER 0
 
