@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-
+ARG GF_VERSION=11.0.0
 ARG BASE_IMAGE=alpine:3.19.1
 ARG JS_IMAGE=node:20-alpine
 ARG JS_PLATFORM=linux/amd64
@@ -14,11 +14,13 @@ ENV NODE_OPTIONS=--max_old_space_size=8000
 
 WORKDIR /tmp/grafana
 
-COPY package.json yarn.lock .yarnrc.yml ./
+COPY package.json project.json nx.json yarn.lock .yarnrc.yml ./
 COPY .yarn .yarn
 COPY packages packages
 COPY plugins-bundled plugins-bundled
 COPY public public
+COPY LICENSE ./
+
 
 RUN apk add --no-cache make build-base python3
 
@@ -58,6 +60,8 @@ COPY pkg/util/xorm/go.* pkg/util/xorm/
 COPY pkg/apiserver/go.* pkg/apiserver/
 COPY pkg/apimachinery/go.* pkg/apimachinery/
 COPY pkg/promlib/go.* pkg/promlib/
+COPY pkg/build/wire/go.* pkg/build/wire/
+
 
 RUN go mod download
 RUN if [[ "$BINGO" = "true" ]]; then \
@@ -178,7 +182,7 @@ RUN if [ ! $(getent group "$GF_GID") ]; then \
 
 COPY --from=go-src /tmp/grafana/bin/grafana* /tmp/grafana/bin/*/grafana* ./bin/
 COPY --from=js-src /tmp/grafana/public ./public
-COPY --from=go-src /tmp/grafana/LICENSE ./
+COPY --from=js-src /tmp/grafana/LICENSE ./
 
 EXPOSE 3000
 
@@ -188,3 +192,21 @@ COPY ${RUN_SH} /run.sh
 
 USER "$GF_UID"
 ENTRYPOINT [ "/run.sh" ]
+
+FROM grafana/grafana:${GF_VERSION}-ubuntu as groundcover
+
+COPY --from=go-src /tmp/grafana/bin/grafana* /tmp/grafana/bin/*/grafana* ./bin/
+COPY --from=js-src /tmp/grafana/public ./public
+
+USER 0
+
+ENV GF_PLUGIN_DIR="/usr/share/grafana/plugins" \
+    GF_PATHS_PLUGINS="/usr/share/grafana/plugins"
+
+ENV GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS=grafana-clickhouse-datasource
+RUN mkdir -p ${GF_PLUGIN_DIR} && \
+    chmod -R 777 ${GF_PLUGIN_DIR} && \
+    grafana cli plugins install grafana-clickhouse-datasource 4.0.3 && \
+    grafana cli plugins install marcusolsson-treemap-panel 2.0.1
+
+USER "$GF_UID"
