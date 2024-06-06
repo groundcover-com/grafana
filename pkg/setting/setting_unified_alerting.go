@@ -139,6 +139,7 @@ type UnifiedAlertingStateHistorySettings struct {
 	MultiPrimary          string
 	MultiSecondaries      []string
 	ExternalLabels        map[string]string
+	LogAll                bool
 }
 
 // IsEnabled returns true if UnifiedAlertingSettings.Enabled is either nil or true.
@@ -368,6 +369,7 @@ func (cfg *Cfg) ReadUnifiedAlertingSettings(iniFile *ini.File) error {
 		MultiPrimary:          stateHistory.Key("primary").MustString(""),
 		MultiSecondaries:      splitTrim(stateHistory.Key("secondaries").MustString(""), ","),
 		ExternalLabels:        stateHistoryLabels.KeysHash(),
+		LogAll:                stateHistory.Key("log_all").MustBool(false),
 	}
 	uaCfg.StateHistory = uaCfgStateHistory
 
