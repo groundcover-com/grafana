@@ -3,7 +3,7 @@ ARG GF_VERSION=11.0.0
 ARG BASE_IMAGE=alpine:3.19.1
 ARG JS_IMAGE=node:20-alpine
 ARG JS_PLATFORM=linux/amd64
-ARG GO_IMAGE=golang:1.21.10-alpine
+ARG GO_IMAGE=golang:1.21.10
 
 ARG GO_SRC=go-builder
 ARG JS_SRC=js-builder
@@ -34,7 +34,7 @@ COPY emails emails
 ENV NODE_ENV production
 RUN yarn build
 
-FROM ${GO_IMAGE} as go-builder
+FROM --platform=${JS_PLATFORM} ${GO_IMAGE} as go-builder
 
 ARG COMMIT_SHA=""
 ARG BUILD_BRANCH=""
@@ -82,6 +82,19 @@ COPY LICENSE ./
 ENV COMMIT_SHA=${COMMIT_SHA}
 ENV BUILD_BRANCH=${BUILD_BRANCH}
 
+RUN make gen-go WIRE_TAGS=${WIRE_TAGS}
+
+FROM ${GO_SRC} as go-build-amd64
+RUN make build-go GO_BUILD_TAGS=${GO_BUILD_TAGS} WIRE_TAGS=${WIRE_TAGS}
+
+FROM ${GO_SRC} as go-build-arm64
+
+RUN apt-get update && \
+    apt-get -y install gcc-aarch64-linux-gnu;
+
+ENV GOARCH=arm64
+ENV CC=aarch64-linux-gnu-gcc
+
 RUN make build-go GO_BUILD_TAGS=${GO_BUILD_TAGS} WIRE_TAGS=${WIRE_TAGS}
 
 FROM ${BASE_IMAGE} as tgz-builder
@@ -96,7 +109,8 @@ COPY ${GRAFANA_TGZ} /tmp/grafana.tar.gz
 RUN tar x -z -f /tmp/grafana.tar.gz --strip-components=1
 
 # helpers for COPY --from
-FROM ${GO_SRC} as go-src
+ARG TARGETARCH
+FROM go-build-${TARGETARCH} as go-src
 FROM ${JS_SRC} as js-src
 
 # Final stage
