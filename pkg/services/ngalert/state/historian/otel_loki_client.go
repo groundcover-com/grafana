@@ -5,7 +5,6 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
-	"strings"
 	"sync"
 	"time"
 
@@ -27,19 +26,6 @@ type otelLokiClient struct {
 	once    *sync.Once
 	cfg     OtelConfig
 	metrics *metrics.Historian
-}
-
-var stateAttributes = []string{"current", "previous"}
-
-func normalizedAttributes(attributes map[string]any) {
-	for _, state := range stateAttributes {
-		if v, ok := attributes[state]; ok {
-			stringAttribute, ok := v.(string)
-			if ok {
-				attributes[state] = normalizeState(stringAttribute)
-			}
-		}
-	}
 }
 
 func newOtelLokiClient(cfg OtelConfig, metrics *metrics.Historian) *otelLokiClient {
@@ -151,8 +137,6 @@ func convertEntryToLogRecord(entry sample, streamAttributes map[string]string, l
 		recordAttributes[k] = v
 	}
 
-	normalizedAttributes(recordAttributes)
-
 	lr.Attributes().FromRaw(recordAttributes)
 	return nil
 }
@@ -197,12 +181,4 @@ func newOtlpGrpcConn(cfg OtelConfig) (conn *grpc.ClientConn, err error) {
 	ctx, cancel := context.WithTimeout(context.Background(), defaultConnectionDialTimeout)
 	defer cancel()
 	return grpc.DialContext(ctx, cfg.Endpoint, options...)
-}
-
-func normalizeState(state string) string {
-	idx := strings.IndexAny(state, "(")
-	if idx == -1 {
-		return state
-	}
-	return strings.TrimSpace(state[:idx])
 }
