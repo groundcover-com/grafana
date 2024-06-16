@@ -28,7 +28,7 @@ type otelLokiClient struct {
 	metrics *metrics.Historian
 }
 
-func newOtelLokiClient(cfg OtelConfig, metrics *metrics.Historian) *otelLokiClient {
+func NewOtelLokiClient(cfg OtelConfig, metrics *metrics.Historian) *otelLokiClient {
 	return &otelLokiClient{
 		once:    &sync.Once{},
 		cfg:     cfg,
@@ -36,15 +36,15 @@ func newOtelLokiClient(cfg OtelConfig, metrics *metrics.Historian) *otelLokiClie
 	}
 }
 
-func (p *otelLokiClient) ping(context.Context) error {
+func (p *otelLokiClient) Ping(context.Context) error {
 	return nil
 }
 
-func (p *otelLokiClient) rangeQuery(ctx context.Context, logQL string, start, end, limit int64) (queryRes, error) {
-	return queryRes{}, fmt.Errorf("unsupported operation")
+func (p *otelLokiClient) RangeQuery(ctx context.Context, logQL string, start, end, limit int64) (QueryRes, error) {
+	return QueryRes{}, fmt.Errorf("unsupported operation")
 }
 
-func (p *otelLokiClient) push(ctx context.Context, s []stream) (err error) {
+func (p *otelLokiClient) Push(ctx context.Context, s []Stream) (err error) {
 	const (
 		timerFailureCode = "500"
 		exportMethodName = "OtelExport"
@@ -78,7 +78,7 @@ func (p *otelLokiClient) push(ctx context.Context, s []stream) (err error) {
 	return nil
 }
 
-func (p *otelLokiClient) pushRequestToLogs(sreams []stream, defaultTimestamp time.Time) (plog.Logs, int, error) {
+func (p *otelLokiClient) pushRequestToLogs(sreams []Stream, defaultTimestamp time.Time) (plog.Logs, int, error) {
 	logs := plog.NewLogs()
 	if len(sreams) == 0 {
 		return logs, 0, nil
@@ -111,7 +111,7 @@ func (p *otelLokiClient) pushRequestToLogs(sreams []stream, defaultTimestamp tim
 	return logs, totalSize, lastErr
 }
 
-func convertEntryToLogRecord(entry sample, streamAttributes map[string]string, lr *plog.LogRecord, defaultTimestamp time.Time) error {
+func convertEntryToLogRecord(entry Sample, streamAttributes map[string]string, lr *plog.LogRecord, defaultTimestamp time.Time) error {
 	const timestampAttribute = "timestamp"
 
 	observedTimestamp := pcommon.NewTimestampFromTime(defaultTimestamp)
