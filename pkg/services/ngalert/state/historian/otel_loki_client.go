@@ -44,20 +44,30 @@ func (p *otelLokiClient) RangeQuery(ctx context.Context, logQL string, start, en
 	return QueryRes{}, fmt.Errorf("unsupported operation")
 }
 
-func (p *otelLokiClient) Push(ctx context.Context, s []Stream) (err error) {
-	const (
-		timerFailureCode = "500"
-		exportMethodName = "OtelExport"
-	)
+func (p *otelLokiClient) getClient() (plogotlp.GRPCClient, error) {
+	var err error
 	p.once.Do(func() {
-		var conn *grpc.ClientConn
-		conn, err = newOtlpGrpcConn(p.cfg)
+		conn, err := newOtlpGrpcConn(p.cfg)
 		if err != nil {
 			return
 		}
 		p.client = plogotlp.NewGRPCClient(conn)
 	})
 
+	if err != nil {
+		return nil, fmt.Errorf("failed to create otel loki client: %w", err)
+	}
+
+	return p.client, nil
+}
+
+func (p *otelLokiClient) Push(ctx context.Context, s []Stream) (err error) {
+	const (
+		timerFailureCode = "500"
+		exportMethodName = "OtelExport"
+	)
+
+	client, err := p.getClient()
 	if err != nil {
 		return err
 	}
@@ -69,7 +79,7 @@ func (p *otelLokiClient) Push(ctx context.Context, s []Stream) (err error) {
 
 	exportStart := time.Now()
 	p.metrics.WriteDuration.Before(ctx, exportMethodName, exportStart)
-	_, err = p.client.Export(ctx, plogotlp.NewExportRequestFromLogs(logs))
+	_, err = client.Export(ctx, plogotlp.NewExportRequestFromLogs(logs))
 	if err != nil {
 		return fmt.Errorf("failed to export logs: %w", err)
 	}
@@ -78,7 +88,7 @@ func (p *otelLokiClient) Push(ctx context.Context, s []Stream) (err error) {
 	return nil
 }
 
-func (p *otelLokiClient) pushRequestToLogs(sreams []Stream, defaultTimestamp time.Time) (plog.Logs, int, error) {
+func (p *otelLokiClient) pushRequestToLogs(sreams []Stream, observedTimestamp time.Time) (plog.Logs, int, error) {
 	logs := plog.NewLogs()
 	if len(sreams) == 0 {
 		return logs, 0, nil
@@ -99,7 +109,7 @@ func (p *otelLokiClient) pushRequestToLogs(sreams []Stream, defaultTimestamp tim
 
 		for _, entry := range stream.Values {
 			lr := logSlice.AppendEmpty()
-			convertEntryToLogRecord(entry, stream.Stream, &lr, defaultTimestamp)
+			convertEntryToLogRecord(entry, stream.Stream, &lr, observedTimestamp)
 			totalSize += len(entry.V)
 		}
 	}
@@ -131,13 +141,13 @@ func convertEntryToLogRecord(entry Sample, streamAttributes map[string]string, l
 	}
 
 	lr.SetTimestamp(timestamp)
-	recordAttributes[timestampAttribute] = timestamp.AsTime().Format(time.RFC3339Nano)
-
+	lr.Attributes().FromRaw(recordAttributes)
+	attributes := lr.Attributes()
+	attributes.PutStr(timestampAttribute, timestamp.AsTime().Format(time.RFC3339Nano))
 	for k, v := range streamAttributes {
-		recordAttributes[k] = v
+		attributes.PutStr(k, v)
 	}
 
-	lr.Attributes().FromRaw(recordAttributes)
 	return nil
 }
 
