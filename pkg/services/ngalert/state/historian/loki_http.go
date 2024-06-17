@@ -45,14 +45,6 @@ type LokiConfig struct {
 	OtelConfig        OtelConfig
 }
 
-type OtelConfig struct {
-	Enabled       bool
-	Endpoint      string
-	EnableTLS     bool
-	TLSSkipVerify bool
-	ApiKey        string
-}
-
 func NewLokiConfig(cfg setting.UnifiedAlertingStateHistorySettings) (LokiConfig, error) {
 	read, write := cfg.LokiReadURL, cfg.LokiWriteURL
 	if read == "" {
