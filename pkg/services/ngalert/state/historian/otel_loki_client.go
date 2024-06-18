@@ -174,13 +174,21 @@ func (p *otelLokiClient) pushHttp(ctx context.Context, req *plogotlp.ExportReque
 		return "", fmt.Errorf("failed to marshal logs: %w", err)
 	}
 
-	buff := payloadsPool.Get()
-	err = gzipRequestIntoBuffer(protoBody, buff)
+	gzippedBuffer := payloadsPool.Get()
+	defer payloadsPool.Put(gzippedBuffer)
+
+	gzipWriter := gzip.NewWriter(gzippedBuffer)
+	_, err = gzipWriter.Write(protoBody)
 	if err != nil {
 		return "", fmt.Errorf("failed to gzip request: %w", err)
 	}
 
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, p.cfg.Endpoint, bytes.NewReader(protoBody))
+	err = gzipWriter.Close()
+	if err != nil {
+		return "", fmt.Errorf("failed to close the gzip writer: %w", err)
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, p.cfg.Endpoint, bytes.NewReader(gzippedBuffer.Bytes()))
 	if err != nil {
 		return "", fmt.Errorf("failed to create http request: %w", err)
 	}
@@ -334,21 +342,4 @@ func getOTLPHTTPConnectionTransport(otelConfig OtelConfig) *http.Transport {
 	}
 
 	return &http.Transport{}
-}
-
-func gzipRequestIntoBuffer(request []byte, gzippedBuffer *bytebufferpool.ByteBuffer) (err error) {
-	gzipWriter := gzip.NewWriter(gzippedBuffer)
-	defer func() {
-		closingError := gzipWriter.Close()
-		if err == nil && closingError != nil {
-			err = fmt.Errorf("failed to close the gzip writer: %w", closingError)
-		}
-	}()
-
-	_, err = gzipWriter.Write(request)
-	if err != nil {
-		return fmt.Errorf("failed to write to the gzip writer: %w", err)
-	}
-
-	return nil
 }
