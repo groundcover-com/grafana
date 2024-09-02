@@ -40,7 +40,7 @@ export function SelectionOptionsForm({
       />
       {includeAll && (
         <VariableTextField
-          defaultValue={allValue ?? ''}
+          defaultValue={allValue ?? '.*'}
           onBlur={onAllValueChange}
           name="Custom all value"
           placeholder="blank = auto"
