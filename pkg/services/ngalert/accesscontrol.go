@@ -209,7 +209,7 @@ var (
 				},
 			},
 		},
-		Grants: []string{string(org.RoleAdmin)},
+		Grants: []string{string(org.RoleEditor), string(org.RoleAdmin)},
 	}
 
 	alertingProvisioningReaderWithSecretsRole = accesscontrol.RoleRegistration{

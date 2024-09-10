@@ -1,9 +1,10 @@
 # syntax=docker/dockerfile:1
 
+ARG GF_VERSION=11.0.0
 ARG BASE_IMAGE=alpine:3.19.1
 ARG JS_IMAGE=node:20-alpine
 ARG JS_PLATFORM=linux/amd64
-ARG GO_IMAGE=golang:1.22.4-alpine
+ARG GO_IMAGE=golang:1.22.4
 
 ARG GO_SRC=go-builder
 ARG JS_SRC=js-builder
@@ -32,7 +33,7 @@ COPY emails emails
 ENV NODE_ENV production
 RUN yarn build
 
-FROM ${GO_IMAGE} as go-builder
+FROM --platform=${JS_PLATFORM} ${GO_IMAGE} as go-builder
 
 ARG COMMIT_SHA=""
 ARG BUILD_BRANCH=""
@@ -84,6 +85,19 @@ COPY .github .github
 ENV COMMIT_SHA=${COMMIT_SHA}
 ENV BUILD_BRANCH=${BUILD_BRANCH}
 
+RUN make gen-go WIRE_TAGS=${WIRE_TAGS}
+
+FROM ${GO_SRC} as go-build-amd64
+RUN make build-go GO_BUILD_TAGS=${GO_BUILD_TAGS} WIRE_TAGS=${WIRE_TAGS}
+
+FROM ${GO_SRC} as go-build-arm64
+
+RUN apt-get update && \
+    apt-get -y install gcc-aarch64-linux-gnu;
+
+ENV GOARCH=arm64
+ENV CC=aarch64-linux-gnu-gcc
+
 RUN make build-go GO_BUILD_TAGS=${GO_BUILD_TAGS} WIRE_TAGS=${WIRE_TAGS}
 
 FROM ${BASE_IMAGE} as tgz-builder
@@ -98,7 +112,8 @@ COPY ${GRAFANA_TGZ} /tmp/grafana.tar.gz
 RUN tar x -z -f /tmp/grafana.tar.gz --strip-components=1
 
 # helpers for COPY --from
-FROM ${GO_SRC} as go-src
+ARG TARGETARCH
+FROM go-build-${TARGETARCH} as go-src
 FROM ${JS_SRC} as js-src
 
 # Final stage
@@ -191,3 +206,20 @@ COPY ${RUN_SH} /run.sh
 
 USER "$GF_UID"
 ENTRYPOINT [ "/run.sh" ]
+
+FROM grafana/grafana:${GF_VERSION}-ubuntu as groundcover
+
+COPY --from=go-src /tmp/grafana/bin/grafana* /tmp/grafana/bin/*/grafana* ./bin/
+COPY --from=js-src /tmp/grafana/public ./public
+
+USER 0
+
+ENV GF_PLUGIN_DIR="/usr/share/grafana/plugins" \
+    GF_PATHS_PLUGINS="/usr/share/grafana/plugins"
+
+RUN mkdir -p ${GF_PLUGIN_DIR} && \
+    chmod -R 777 ${GF_PLUGIN_DIR} && \
+    grafana cli plugins install grafana-clickhouse-datasource 4.0.3 && \
+    grafana cli plugins install marcusolsson-treemap-panel 2.0.1
+
+USER "$GF_UID"
