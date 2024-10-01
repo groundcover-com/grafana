@@ -79,17 +79,19 @@ type RemoteLokiBackend struct {
 	clock          clock.Clock
 	metrics        *metrics.Historian
 	log            log.Logger
+	logAll         bool
 	ac             AccessControl
 	ruleStore      RuleStore
 }
 
 func NewRemoteLokiBackend(logger log.Logger, cfg LokiConfig, req client.Requester, metrics *metrics.Historian, tracer tracing.Tracer, ruleStore RuleStore, ac AccessControl) *RemoteLokiBackend {
 	return &RemoteLokiBackend{
-		client:         NewLokiClient(cfg, req, metrics, logger, tracer),
+		client:         NewHistorianExportClient(cfg, req, metrics, logger, tracer),
 		externalLabels: cfg.ExternalLabels,
 		clock:          clock.New(),
 		metrics:        metrics,
 		log:            logger,
+		logAll:         cfg.LogAll,
 		ac:             ac,
 		ruleStore:      ruleStore,
 	}
@@ -102,7 +104,7 @@ func (h *RemoteLokiBackend) TestConnection(ctx context.Context) error {
 // Record writes a number of state transitions for a given rule to an external Loki instance.
 func (h *RemoteLokiBackend) Record(ctx context.Context, rule history_model.RuleMeta, states []state.StateTransition) <-chan error {
 	logger := h.log.FromContext(ctx)
-	logStream := StatesToStream(rule, states, h.externalLabels, logger)
+	logStream := StatesToStream(rule, states, h.externalLabels, logger, h.logAll)
 
 	errCh := make(chan error, 1)
 	if len(logStream.Values) == 0 {
@@ -269,7 +271,7 @@ func merge(res []Stream, folderUIDToFilter []string) (*data.Frame, error) {
 	return frame, nil
 }
 
-func StatesToStream(rule history_model.RuleMeta, states []state.StateTransition, externalLabels map[string]string, logger log.Logger) Stream {
+func StatesToStream(rule history_model.RuleMeta, states []state.StateTransition, externalLabels map[string]string, logger log.Logger, logAll bool) Stream {
 	labels := mergeLabels(make(map[string]string), externalLabels)
 	// System-defined labels take precedence over user-defined external labels.
 	labels[StateHistoryLabelKey] = StateHistoryLabelValue
@@ -279,7 +281,7 @@ func StatesToStream(rule history_model.RuleMeta, states []state.StateTransition,
 
 	samples := make([]Sample, 0, len(states))
 	for _, state := range states {
-		if !shouldRecord(state) {
+		if !shouldRecord(state) && !logAll {
 			continue
 		}
 
@@ -536,4 +538,12 @@ func (h *RemoteLokiBackend) getFolderUIDsForFilter(ctx context.Context, query mo
 	}
 	sort.Strings(uids)
 	return uids, nil
+}
+
+func NewHistorianExportClient(cfg LokiConfig, req client.Requester, metrics *metrics.Historian, logger log.Logger, tracer tracing.Tracer) remoteLokiClient {
+	if cfg.OtelConfig.Enabled {
+		return NewOtelLokiClient(cfg.OtelConfig, metrics)
+	}
+
+	return NewLokiClient(cfg, req, metrics, logger, tracer)
 }

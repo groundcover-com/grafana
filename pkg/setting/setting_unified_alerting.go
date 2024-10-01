@@ -2,6 +2,7 @@ package setting
 
 import (
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -168,6 +169,12 @@ type UnifiedAlertingStateHistorySettings struct {
 	MultiPrimary          string
 	MultiSecondaries      []string
 	ExternalLabels        map[string]string
+	LogAll                bool
+	OtelEnabled           bool
+	OtelEndpoint          string
+	OtelEnableTLS         bool
+	OtelTLSSkipVerify     bool
+	OtelApiKey            string
 }
 
 // IsEnabled returns true if UnifiedAlertingSettings.Enabled is either nil or true.
@@ -416,6 +423,12 @@ func (cfg *Cfg) ReadUnifiedAlertingSettings(iniFile *ini.File) error {
 		MultiPrimary:          stateHistory.Key("primary").MustString(""),
 		MultiSecondaries:      splitTrim(stateHistory.Key("secondaries").MustString(""), ","),
 		ExternalLabels:        stateHistoryLabels.KeysHash(),
+		LogAll:                stateHistory.Key("log_all").MustBool(false),
+		OtelEnabled:           stateHistory.Key("otel_export_enabled").MustBool(false),
+		OtelEndpoint:          stateHistory.Key("otel_endpoint").MustString(""),
+		OtelEnableTLS:         stateHistory.Key("otel_enable_tls").MustBool(false),
+		OtelTLSSkipVerify:     stateHistory.Key("otel_tls_skip_verify").MustBool(false),
+		OtelApiKey:            os.Getenv("API_KEY"),
 	}
 	uaCfg.StateHistory = uaCfgStateHistory
 
