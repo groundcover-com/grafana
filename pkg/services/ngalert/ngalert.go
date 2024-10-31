@@ -381,7 +381,7 @@ func (ng *AlertNG) init() error {
 		Metrics:                        ng.Metrics.GetStateMetrics(),
 		ExternalURL:                    appUrl,
 		DisableExecution:               !ng.Cfg.UnifiedAlerting.ExecuteAlerts,
-		InstanceStore:                  ng.store,
+		InstanceStore:                  nil,
 		Images:                         ng.ImageService,
 		Clock:                          clk,
 		Historian:                      history,
