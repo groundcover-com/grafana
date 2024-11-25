@@ -161,7 +161,7 @@ type AlertNG struct {
 
 func (ng *AlertNG) init() error {
 	// AlertNG should be initialized before the cancellation deadline of initCtx
-	initCtx, cancelFunc := context.WithTimeout(context.Background(), ng.Cfg.UnifiedAlerting.InitializationTimeout)
+	initCtx, cancelFunc := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancelFunc()
 
 	ng.store.Logger = ng.Log
@@ -414,11 +414,23 @@ func (ng *AlertNG) init() error {
 		Log:                            log.New("ngalert.state.manager"),
 		ResolvedRetention:              ng.Cfg.UnifiedAlerting.ResolvedAlertRetention,
 	}
+
 	logger := log.New("ngalert.state.manager.persist")
+
+	if ng.FeatureToggles.IsEnabledGlobally(featuremgmt.FlagDisableInstanceStore) {
+		cfg.InstanceStore = nil
+		logger.Info("Instance store is disabled")
+	} else {
+		logger.Info("Instance store is enabled")
+	}
+
 	statePersister := state.NewSyncStatePersisiter(logger, cfg)
 	if ng.FeatureToggles.IsEnabledGlobally(featuremgmt.FlagAlertingSaveStatePeriodic) {
 		ticker := clock.New().Ticker(ng.Cfg.UnifiedAlerting.StatePeriodicSaveInterval)
 		statePersister = state.NewAsyncStatePersister(logger, ticker, cfg)
+		logger.Info("Using asnyc state persister")
+	} else {
+		logger.Info("Using sync state persister")
 	}
 	stateManager := state.NewManager(cfg, statePersister)
 	scheduler := schedule.NewScheduler(schedCfg, stateManager)
@@ -622,6 +634,7 @@ func configureHistorianBackend(ctx context.Context, cfg setting.UnifiedAlertingS
 		return historian.NewAnnotationBackend(annotationBackendLogger, store, rs, met, ac), nil
 	}
 	if backend == historian.BackendTypeLoki {
+		l.Info(fmt.Sprintf("loki state history backend is enabled, log all changes %v, otel enabled %v", cfg.LogAll, cfg.OtelEnabled))
 		lcfg, err := historian.NewLokiConfig(cfg)
 		if err != nil {
 			return nil, fmt.Errorf("invalid remote loki configuration: %w", err)
