@@ -59,7 +59,7 @@ jobs:
           registry-type: public
       -
         name: Get Grafana Version
-        run: echo "GF_VERSION=$(npm pkg get version | tr -d '"')" >> $GITHUB_ENV
+        run: echo "GF_VERSION=$(git tag -l --sort=-creatordate  --no-contains=$(git rev-parse HEAD) | head -n1)" >> $GITHUB_ENV
       -
         name: Build Docker Image
         uses: docker/build-push-action@v5
