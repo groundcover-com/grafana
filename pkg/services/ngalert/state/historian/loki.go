@@ -299,6 +299,7 @@ func StatesToStream(rule history_model.RuleMeta, states []state.StateTransition,
 			RuleID:         rule.ID,
 			RuleUID:        rule.UID,
 			InstanceLabels: sanitizedLabels,
+			Annotations:    state.Annotations,
 		}
 		if state.State.State == eval.Error {
 			entry.Error = state.Error.Error()
@@ -361,6 +362,7 @@ type LokiEntry struct {
 	// InstanceLabels is exactly the set of labels associated with the alert instance in Alertmanager.
 	// These should not be conflated with labels associated with log streams.
 	InstanceLabels map[string]string `json:"labels"`
+	Annotations    map[string]string `json:"annotations"`
 }
 
 func valuesAsDataBlob(state *state.State) *simplejson.Json {
