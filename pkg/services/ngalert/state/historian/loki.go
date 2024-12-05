@@ -39,6 +39,10 @@ const (
 	dfLabels = "labels"
 )
 
+var annotationsToDelete = []string{
+	"_gc_monitor_yaml",
+}
+
 const (
 	StateHistoryLabelKey   = "from"
 	StateHistoryLabelValue = "state-history"
@@ -299,7 +303,7 @@ func StatesToStream(rule history_model.RuleMeta, states []state.StateTransition,
 			RuleID:         rule.ID,
 			RuleUID:        rule.UID,
 			InstanceLabels: sanitizedLabels,
-			Annotations:    state.Annotations,
+			Annotations:    cleanAnnotations(state.Annotations, annotationsToDelete),
 		}
 		if state.State.State == eval.Error {
 			entry.Error = state.Error.Error()
@@ -332,7 +336,7 @@ func calculateFingerprint(labels data.Labels) string {
 		// https://github.com/grafana/alerting/blob/2dda1c67ec02625ac9fc8607157b3d5825d47919/notify/grafana_alertmanager.go#L722-L724
 		if len(v) == 0 || k == "__alert_rule_namespace_uid__" {
 			delete(cpLabels, k)
-		}
+		}	
 	}
 	return labelFingerprint(cpLabels)
 }
@@ -561,4 +565,19 @@ func NewHistorianExportClient(cfg LokiConfig, req client.Requester, metrics *met
 	}
 
 	return NewLokiClient(cfg, req, metrics, logger, tracer)
+}
+
+func cleanAnnotations(annotations map[string]string, annotationsToDelete []string) map[string]string {
+	filtered := make(map[string]string, len(annotations))
+root:
+	for k, v := range annotations {
+		for _, toDelete := range annotationsToDelete {
+			if k == toDelete {
+				continue root
+			}
+		}
+		filtered[k] = v
+	}
+
+	return filtered
 }
