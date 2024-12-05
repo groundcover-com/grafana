@@ -39,8 +39,8 @@ const (
 	dfLabels = "labels"
 )
 
-var annotationsToDelete = []string{
-	"_gc_monitor_yaml",
+var annotationsToDelete = map[string]struct{}{
+	"_gc_monitor_yaml": {},
 }
 
 const (
@@ -336,7 +336,7 @@ func calculateFingerprint(labels data.Labels) string {
 		// https://github.com/grafana/alerting/blob/2dda1c67ec02625ac9fc8607157b3d5825d47919/notify/grafana_alertmanager.go#L722-L724
 		if len(v) == 0 || k == "__alert_rule_namespace_uid__" {
 			delete(cpLabels, k)
-		}	
+		}
 	}
 	return labelFingerprint(cpLabels)
 }
@@ -567,17 +567,12 @@ func NewHistorianExportClient(cfg LokiConfig, req client.Requester, metrics *met
 	return NewLokiClient(cfg, req, metrics, logger, tracer)
 }
 
-func cleanAnnotations(annotations map[string]string, annotationsToDelete []string) map[string]string {
+func cleanAnnotations(annotations map[string]string, annotationsToDelete map[string]struct{}) map[string]string {
 	filtered := make(map[string]string, len(annotations))
-root:
 	for k, v := range annotations {
-		for _, toDelete := range annotationsToDelete {
-			if k == toDelete {
-				continue root
-			}
+		if _, shouldDelete := annotationsToDelete[k]; !shouldDelete {
+			filtered[k] = v
 		}
-		filtered[k] = v
 	}
-
 	return filtered
 }
