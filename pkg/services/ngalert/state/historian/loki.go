@@ -290,6 +290,12 @@ func StatesToStream(rule history_model.RuleMeta, states []state.StateTransition,
 		}
 
 		sanitizedLabels := removePrivateLabels(state.Labels)
+		var errMsg string
+		if state.State.State == eval.Error {
+			errMsg = state.Error.Error()
+			state.State.Values = map[string]float64{}
+		}
+
 		entry := LokiEntry{
 			SchemaVersion:  1,
 			Previous:       state.PreviousFormatted(),
@@ -304,9 +310,7 @@ func StatesToStream(rule history_model.RuleMeta, states []state.StateTransition,
 			RuleUID:        rule.UID,
 			InstanceLabels: sanitizedLabels,
 			Annotations:    cleanAnnotations(state.Annotations, annotationsToDelete),
-		}
-		if state.State.State == eval.Error {
-			entry.Error = state.Error.Error()
+			Error:          errMsg,
 		}
 
 		jsn, err := json.Marshal(entry)
