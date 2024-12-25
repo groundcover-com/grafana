@@ -34,9 +34,10 @@ const (
 	GroupLabel     = "group"
 	FolderUIDLabel = "folderUID"
 	// Name of the columns used in the dataframe.
-	dfTime   = "time"
-	dfLine   = "line"
-	dfLabels = "labels"
+	dfTime            = "time"
+	dfLine            = "line"
+	dfLabels          = "labels"
+	errAnnotationName = "Error"
 )
 
 var annotationsToDelete = map[string]struct{}{
@@ -293,6 +294,10 @@ func StatesToStream(rule history_model.RuleMeta, states []state.StateTransition,
 		var errMsg string
 		if state.State.State == eval.Error {
 			errMsg = state.Error.Error()
+			state.State.Values = map[string]float64{}
+			// sometimes eval.Error is nill but we get an annotation
+		} else if errAnnotationValue := state.Annotations[errAnnotationName]; errAnnotationValue != "" {
+			errMsg = errAnnotationValue
 			state.State.Values = map[string]float64{}
 		}
 
