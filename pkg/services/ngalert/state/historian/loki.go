@@ -37,7 +37,13 @@ const (
 	dfTime   = "time"
 	dfLine   = "line"
 	dfLabels = "labels"
+	// Error annotation name.
+	errAnnotationName = "Error"
 )
+
+var annotationsToDelete = map[string]struct{}{
+	"_gc_monitor_yaml": {},
+}
 
 const (
 	StateHistoryLabelKey   = "from"
@@ -79,17 +85,19 @@ type RemoteLokiBackend struct {
 	clock          clock.Clock
 	metrics        *metrics.Historian
 	log            log.Logger
+	logAll         bool
 	ac             AccessControl
 	ruleStore      RuleStore
 }
 
 func NewRemoteLokiBackend(logger log.Logger, cfg LokiConfig, req client.Requester, metrics *metrics.Historian, tracer tracing.Tracer, ruleStore RuleStore, ac AccessControl) *RemoteLokiBackend {
 	return &RemoteLokiBackend{
-		client:         NewLokiClient(cfg, req, metrics, logger, tracer),
+		client:         NewHistorianExportClient(cfg, req, metrics, logger, tracer),
 		externalLabels: cfg.ExternalLabels,
 		clock:          clock.New(),
 		metrics:        metrics,
 		log:            logger,
+		logAll:         cfg.LogAll,
 		ac:             ac,
 		ruleStore:      ruleStore,
 	}
@@ -102,7 +110,7 @@ func (h *RemoteLokiBackend) TestConnection(ctx context.Context) error {
 // Record writes a number of state transitions for a given rule to an external Loki instance.
 func (h *RemoteLokiBackend) Record(ctx context.Context, rule history_model.RuleMeta, states []state.StateTransition) <-chan error {
 	logger := h.log.FromContext(ctx)
-	logStream := StatesToStream(rule, states, h.externalLabels, logger)
+	logStream := StatesToStream(rule, states, h.externalLabels, logger, h.logAll)
 
 	errCh := make(chan error, 1)
 	if len(logStream.Values) == 0 {
@@ -269,7 +277,7 @@ func merge(res []Stream, folderUIDToFilter []string) (*data.Frame, error) {
 	return frame, nil
 }
 
-func StatesToStream(rule history_model.RuleMeta, states []state.StateTransition, externalLabels map[string]string, logger log.Logger) Stream {
+func StatesToStream(rule history_model.RuleMeta, states []state.StateTransition, externalLabels map[string]string, logger log.Logger, logAll bool) Stream {
 	labels := mergeLabels(make(map[string]string), externalLabels)
 	// System-defined labels take precedence over user-defined external labels.
 	labels[StateHistoryLabelKey] = StateHistoryLabelValue
@@ -279,27 +287,39 @@ func StatesToStream(rule history_model.RuleMeta, states []state.StateTransition,
 
 	samples := make([]Sample, 0, len(states))
 	for _, state := range states {
-		if !shouldRecord(state) {
+		if !shouldRecord(state) && !logAll {
 			continue
 		}
 
 		sanitizedLabels := removePrivateLabels(state.Labels)
-		entry := LokiEntry{
-			SchemaVersion:  1,
-			Previous:       state.PreviousFormatted(),
-			Current:        state.Formatted(),
-			Values:         valuesAsDataBlob(state.State),
-			Condition:      rule.Condition,
-			DashboardUID:   rule.DashboardUID,
-			PanelID:        rule.PanelID,
-			Fingerprint:    labelFingerprint(sanitizedLabels),
-			RuleTitle:      rule.Title,
-			RuleID:         rule.ID,
-			RuleUID:        rule.UID,
-			InstanceLabels: sanitizedLabels,
-		}
+		var errMsg string
 		if state.State.State == eval.Error {
-			entry.Error = state.Error.Error()
+			errMsg = state.Error.Error()
+			state.State.Values = map[string]float64{}
+			// sometimes eval.Error is nil but we get an annotation
+		} else if errAnnotationValue := state.Annotations[errAnnotationName]; errAnnotationValue != "" {
+			errMsg = errAnnotationValue
+			state.State.Values = map[string]float64{}
+		} else if state.State.State == eval.NoData || state.State.StateReason == eval.NoData.String() {
+			state.State.Values = map[string]float64{}
+		}
+
+		entry := LokiEntry{
+			SchemaVersion:             1,
+			Previous:                  state.PreviousFormatted(),
+			Current:                   state.Formatted(),
+			Values:                    valuesAsDataBlob(state.State),
+			Condition:                 rule.Condition,
+			DashboardUID:              rule.DashboardUID,
+			PanelID:                   rule.PanelID,
+			Fingerprint:               calculateFingerprint(state.Labels),
+			RuleTitle:                 rule.Title,
+			RuleID:                    rule.ID,
+			RuleUID:                   rule.UID,
+			InstanceLabels:            sanitizedLabels,
+			Annotations:               cleanAnnotations(state.Annotations, annotationsToDelete),
+			Error:                     errMsg,
+			EvaluationDurationSeconds: state.EvaluationDuration.Seconds(),
 		}
 
 		jsn, err := json.Marshal(entry)
@@ -319,6 +339,19 @@ func StatesToStream(rule history_model.RuleMeta, states []state.StateTransition,
 		Stream: labels,
 		Values: samples,
 	}
+}
+
+func calculateFingerprint(labels data.Labels) string {
+	cpLabels := labels.Copy()
+	for k, v := range cpLabels {
+		// The Grafana Alertmanager skips empty and namespace UID labels.
+		// To get the same alert fingerprint we need to remove these labels too.
+		// https://github.com/grafana/alerting/blob/2dda1c67ec02625ac9fc8607157b3d5825d47919/notify/grafana_alertmanager.go#L722-L724
+		if len(v) == 0 || k == "__alert_rule_namespace_uid__" {
+			delete(cpLabels, k)
+		}
+	}
+	return labelFingerprint(cpLabels)
 }
 
 func (h *RemoteLokiBackend) recordStreams(ctx context.Context, stream Stream, logger log.Logger) error {
@@ -345,7 +378,9 @@ type LokiEntry struct {
 	RuleUID       string           `json:"ruleUID"`
 	// InstanceLabels is exactly the set of labels associated with the alert instance in Alertmanager.
 	// These should not be conflated with labels associated with log streams.
-	InstanceLabels map[string]string `json:"labels"`
+	InstanceLabels            map[string]string `json:"labels"`
+	Annotations               map[string]string `json:"annotations"`
+	EvaluationDurationSeconds float64           `json:"evaluationDurationSeconds"`
 }
 
 func valuesAsDataBlob(state *state.State) *simplejson.Json {
@@ -536,4 +571,22 @@ func (h *RemoteLokiBackend) getFolderUIDsForFilter(ctx context.Context, query mo
 	}
 	sort.Strings(uids)
 	return uids, nil
+}
+
+func NewHistorianExportClient(cfg LokiConfig, req client.Requester, metrics *metrics.Historian, logger log.Logger, tracer tracing.Tracer) remoteLokiClient {
+	if cfg.OtelConfig.Enabled {
+		return NewOtelLokiClient(cfg.OtelConfig, metrics)
+	}
+
+	return NewLokiClient(cfg, req, metrics, logger, tracer)
+}
+
+func cleanAnnotations(annotations map[string]string, annotationsToDelete map[string]struct{}) map[string]string {
+	filtered := make(map[string]string, len(annotations))
+	for k, v := range annotations {
+		if _, shouldDelete := annotationsToDelete[k]; !shouldDelete {
+			filtered[k] = v
+		}
+	}
+	return filtered
 }

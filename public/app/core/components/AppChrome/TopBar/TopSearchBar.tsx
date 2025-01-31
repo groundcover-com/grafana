@@ -13,7 +13,7 @@ import { useSelector } from 'app/types';
 import { Branding } from '../../Branding/Branding';
 import { enrichHelpItem } from '../MegaMenu/utils';
 import { NewsContainer } from '../News/NewsContainer';
-import { OrganizationSwitcher } from '../OrganizationSwitcher/OrganizationSwitcher';
+// import { OrganizationSwitcher } from '../OrganizationSwitcher/OrganizationSwitcher';
 import { QuickAdd } from '../QuickAdd/QuickAdd';
 import { TOP_BAR_LEVEL_HEIGHT } from '../types';
 
@@ -42,7 +42,7 @@ export const TopSearchBar = memo(function TopSearchBar() {
         <a className={styles.logo} href={homeUrl} title="Go to home">
           <Branding.MenuLogo className={styles.img} />
         </a>
-        <OrganizationSwitcher />
+        {/* <OrganizationSwitcher /> */}
         <ScopesSelector />
       </TopSearchBarSection>
 
