@@ -305,10 +305,8 @@ func StatesToStream(rule history_model.RuleMeta, states []state.StateTransition,
 		}
 
 		thresholdInputValue := 0.0
-		if state.State.State == eval.Alerting {
-			if value, ok := state.State.Values[rule.Condition]; ok {
-				thresholdInputValue = value
-			}
+		if value, ok := state.State.Values[rule.Condition]; ok {
+			thresholdInputValue = value
 		}
 
 		entry := LokiEntry{
