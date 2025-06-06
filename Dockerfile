@@ -2,7 +2,7 @@
 
 # to maintain formatting of multiline commands in vscode, add the following to settings.json:
 # "docker.languageserver.formatter.ignoreMultilineInstructions": true
-
+ARG GF_VERSION=11.3.7
 ARG BASE_IMAGE=alpine:3.21
 ARG JS_IMAGE=node:20-alpine
 ARG JS_PLATFORM=linux/amd64
@@ -26,6 +26,8 @@ COPY plugins-bundled plugins-bundled
 COPY public public
 COPY LICENSE ./
 COPY conf/defaults.ini ./conf/defaults.ini
+COPY e2e e2e
+
 
 RUN apk add --no-cache make build-base python3
 
@@ -45,7 +47,7 @@ ARG COMMIT_SHA=""
 ARG BUILD_BRANCH=""
 ARG GO_BUILD_TAGS="oss"
 ARG WIRE_TAGS="oss"
-ARG BINGO="true"
+ARG BINGO="false"
 
 RUN if grep -i -q alpine /etc/issue; then \
       apk add --no-cache \
@@ -62,17 +64,18 @@ COPY go.* ./
 COPY .bingo .bingo
 
 # Include vendored dependencies
-COPY pkg/util/xorm/go.* pkg/util/xorm/
-COPY pkg/apiserver/go.* pkg/apiserver/
-COPY pkg/apimachinery/go.* pkg/apimachinery/
-COPY pkg/build/go.* pkg/build/
-COPY pkg/build/wire/go.* pkg/build/wire/
-COPY pkg/promlib/go.* pkg/promlib/
-COPY pkg/storage/unified/resource/go.* pkg/storage/unified/resource/
-COPY pkg/storage/unified/apistore/go.* pkg/storage/unified/apistore/
-COPY pkg/semconv/go.* pkg/semconv/
-COPY pkg/aggregator/go.* pkg/aggregator/
-COPY apps/playlist/go.* apps/playlist/
+COPY pkg/util/xorm pkg/util/xorm
+COPY pkg/apiserver pkg/apiserver
+COPY pkg/apimachinery pkg/apimachinery
+COPY pkg/build pkg/build
+COPY pkg/build/wire pkg/build/wire
+COPY pkg/promlib pkg/promlib
+COPY pkg/storage/unified/resource pkg/storage/unified/resource
+COPY pkg/storage/unified/apistore pkg/storage/unified/apistore
+COPY pkg/semconv pkg/semconv
+COPY pkg/aggregator pkg/aggregator
+COPY apps/playlist apps/playlist
+
 
 RUN go mod download
 RUN if [[ "$BINGO" = "true" ]]; then \
@@ -94,6 +97,8 @@ COPY .github .github
 
 ENV COMMIT_SHA=${COMMIT_SHA}
 ENV BUILD_BRANCH=${BUILD_BRANCH}
+
+RUN make gen-go WIRE_TAGS=${WIRE_TAGS}
 
 RUN make build-go GO_BUILD_TAGS=${GO_BUILD_TAGS} WIRE_TAGS=${WIRE_TAGS}
 
@@ -204,3 +209,21 @@ COPY ${RUN_SH} /run.sh
 
 USER "$GF_UID"
 ENTRYPOINT [ "/run.sh" ]
+
+
+FROM grafana/grafana:${GF_VERSION}-ubuntu as groundcover
+
+COPY --from=go-src /tmp/grafana/bin/grafana* /tmp/grafana/bin/*/grafana* ./bin/
+COPY --from=js-src /tmp/grafana/public ./public
+
+USER 0
+
+ENV GF_PLUGIN_DIR="/usr/share/grafana/plugins" \
+    GF_PATHS_PLUGINS="/usr/share/grafana/plugins"
+
+RUN mkdir -p ${GF_PLUGIN_DIR} && \
+    chmod -R 777 ${GF_PLUGIN_DIR} && \
+    grafana cli plugins install grafana-clickhouse-datasource 4.0.3 && \
+    grafana cli plugins install marcusolsson-treemap-panel 2.0.1
+
+USER "$GF_UID"
