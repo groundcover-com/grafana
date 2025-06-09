@@ -100,6 +100,17 @@ ENV BUILD_BRANCH=${BUILD_BRANCH}
 
 RUN make gen-go WIRE_TAGS=${WIRE_TAGS}
 
+FROM ${GO_SRC} as go-build-amd64
+RUN make build-go GO_BUILD_TAGS=${GO_BUILD_TAGS} WIRE_TAGS=${WIRE_TAGS}
+
+FROM ${GO_SRC} as go-build-arm64
+
+RUN apt-get update && \
+    apt-get -y install gcc-aarch64-linux-gnu;
+
+ENV GOARCH=arm64
+ENV CC=aarch64-linux-gnu-gcc
+
 RUN make build-go GO_BUILD_TAGS=${GO_BUILD_TAGS} WIRE_TAGS=${WIRE_TAGS}
 
 # From-tarball build stage
@@ -115,7 +126,9 @@ COPY ${GRAFANA_TGZ} /tmp/grafana.tar.gz
 RUN tar x -z -f /tmp/grafana.tar.gz --strip-components=1
 
 # helpers for COPY --from
-FROM ${GO_SRC} AS go-src
+
+ARG TARGETARCH
+FROM go-build-${TARGETARCH} as go-src
 FROM ${JS_SRC} AS js-src
 
 # Final stage
