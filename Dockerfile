@@ -1,12 +1,10 @@
 # syntax=docker/dockerfile:1
 
-# to maintain formatting of multiline commands in vscode, add the following to settings.json:
-# "docker.languageserver.formatter.ignoreMultilineInstructions": true
 ARG GF_VERSION=11.3.7
 ARG BASE_IMAGE=alpine:3.21
 ARG JS_IMAGE=node:20-alpine
 ARG JS_PLATFORM=linux/amd64
-ARG GO_IMAGE=golang:1.24.3-alpine
+ARG GO_IMAGE=golang:1.24.3
 
 # Default to building locally
 ARG GO_SRC=go-builder
@@ -41,7 +39,7 @@ ENV NODE_ENV production
 RUN yarn build
 
 # Golang build stage
-FROM ${GO_IMAGE} AS go-builder
+FROM --platform=${JS_PLATFORM} ${GO_IMAGE} AS go-builder
 
 ARG COMMIT_SHA=""
 ARG BUILD_BRANCH=""
@@ -100,10 +98,10 @@ ENV BUILD_BRANCH=${BUILD_BRANCH}
 
 RUN make gen-go WIRE_TAGS=${WIRE_TAGS}
 
-FROM ${GO_SRC} as go-build-amd64
+FROM ${GO_SRC} AS go-build-amd64
 RUN make build-go GO_BUILD_TAGS=${GO_BUILD_TAGS} WIRE_TAGS=${WIRE_TAGS}
 
-FROM ${GO_SRC} as go-build-arm64
+FROM ${GO_SRC} AS go-build-arm64
 
 RUN apt-get update && \
     apt-get -y install gcc-aarch64-linux-gnu;
@@ -128,7 +126,7 @@ RUN tar x -z -f /tmp/grafana.tar.gz --strip-components=1
 # helpers for COPY --from
 
 ARG TARGETARCH
-FROM go-build-${TARGETARCH} as go-src
+FROM go-build-${TARGETARCH} AS go-src
 FROM ${JS_SRC} AS js-src
 
 # Final stage
@@ -224,7 +222,7 @@ USER "$GF_UID"
 ENTRYPOINT [ "/run.sh" ]
 
 
-FROM grafana/grafana:${GF_VERSION}-ubuntu as groundcover
+FROM grafana/grafana:${GF_VERSION}-ubuntu AS groundcover
 
 COPY --from=go-src /tmp/grafana/bin/grafana* /tmp/grafana/bin/*/grafana* ./bin/
 COPY --from=js-src /tmp/grafana/public ./public
