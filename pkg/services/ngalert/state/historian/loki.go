@@ -325,6 +325,7 @@ func StatesToStream(ctx context.Context, rule history_model.RuleMeta, states []s
 				logger.Error("Failed to check if alert is muted", "error", err, "labels", state.Labels)
 			} else {
 				isMuted = muted
+				logger.Info("Mute check completed", "labels", state.Labels, "isMuted", isMuted)
 			}
 		}
 

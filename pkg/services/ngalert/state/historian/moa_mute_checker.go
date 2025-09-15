@@ -8,17 +8,21 @@ import (
 	"github.com/grafana/grafana/pkg/services/ngalert/notifier"
 )
 
+type OrgAlertmanager interface {
+	AlertmanagerFor(orgID int64) (notifier.Alertmanager, error)
+}
+
 // MultiOrgAlertmanagerMuteChecker implements MuteChecker using a MultiOrgAlertmanager
 type MultiOrgAlertmanagerMuteChecker struct {
-	moa interface {
-		AlertmanagerFor(orgID int64) (notifier.Alertmanager, error)
-	}
+	moa OrgAlertmanager
+}
+
+type muteChecker interface {
+	Mutes(ctx context.Context, labels data.Labels) (bool, error)
 }
 
 // NewMultiOrgAlertmanagerMuteChecker creates a new mute checker that uses the MultiOrgAlertmanager
-func NewMultiOrgAlertmanagerMuteChecker(moa interface {
-	AlertmanagerFor(orgID int64) (notifier.Alertmanager, error)
-}) *MultiOrgAlertmanagerMuteChecker {
+func NewMultiOrgAlertmanagerMuteChecker(moa OrgAlertmanager) *MultiOrgAlertmanagerMuteChecker {
 	if moa == nil {
 		return nil
 	}
@@ -41,9 +45,6 @@ func (c *MultiOrgAlertmanagerMuteChecker) IsMuted(ctx context.Context, orgID int
 
 	// Check if the alertmanager has the Mutes method
 	// This assumes your forked alertmanager has this method
-	type muteChecker interface {
-		Mutes(ctx context.Context, labels data.Labels) (bool, error)
-	}
 
 	muteAM, ok := am.(muteChecker)
 	if !ok {
