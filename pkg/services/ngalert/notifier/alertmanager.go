@@ -434,7 +434,7 @@ func (am *alertmanager) SilenceState(_ context.Context) (alertingNotify.SilenceS
 }
 
 // Mutes returns the list of silence IDs that mute the given labels
-func (am *alertmanager) Mutes(labels data.Labels) ([]string, error) {
+func (am *alertmanager) GetSilenceIds(labels data.Labels) ([]string, error) {
 	// Convert data.Labels to model.LabelSet
 	labelSet := make(model.LabelSet, len(labels))
 	for k, v := range labels {

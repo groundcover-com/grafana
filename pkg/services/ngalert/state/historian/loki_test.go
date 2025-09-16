@@ -218,13 +218,13 @@ func TestRemoteLokiBackend(t *testing.T) {
 
 			// Create a mock mute checker
 			muteChecker := &mockMuteChecker{
-				muted: true,
+				silenceIds: []string{"123"},
 			}
 
 			res := StatesToStream(rule, states, nil, l, false, muteChecker)
 
 			entry := requireSingleEntry(t, res)
-			require.True(t, entry.IsMuted, "Alert should be marked as muted")
+			require.True(t, len(entry.SilenceIds) > 0, "Alert should be marked as muted")
 		})
 
 		t.Run("sets is_muted to false when alert is not muted", func(t *testing.T) {
@@ -240,28 +240,28 @@ func TestRemoteLokiBackend(t *testing.T) {
 
 			// Create a mock mute checker that returns false
 			muteChecker := &mockMuteChecker{
-				muted: false,
+				silenceIds: []string{},
 			}
 
 			res := StatesToStream(rule, states, nil, l, false, muteChecker)
 
 			entry := requireSingleEntry(t, res)
-			require.False(t, entry.IsMuted, "Alert should not be marked as muted")
+			require.False(t, len(entry.SilenceIds) > 0, "Alert should not be marked as muted")
 		})
 	})
 }
 
 // mockMuteChecker is a test implementation of MuteChecker
 type mockMuteChecker struct {
-	muted bool
+	silenceIds []string
 	err   error
 }
 
-func (m *mockMuteChecker) IsMuted(orgID int64, labels data.Labels) (bool, error) {
+func (m *mockMuteChecker) GetSilenceIds(orgID int64, labels data.Labels) ([]string, error) {
 	if m.err != nil {
-		return false, m.err
+		return nil, m.err
 	}
-	return m.muted, nil
+	return m.silenceIds, nil
 }
 
 func TestBuildLogQuery(t *testing.T) {

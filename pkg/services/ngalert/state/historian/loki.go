@@ -81,7 +81,7 @@ type remoteLokiClient interface {
 
 // MuteChecker is an interface for checking if an alert is muted based on its labels
 type MuteChecker interface {
-	IsMuted(orgID int64, labels data.Labels) (bool, error)
+	GetSilenceIds(orgID int64, labels data.Labels) ([]string, error)
 }
 
 // RemoteLokibackend is a state.Historian that records state history to an external Loki instance.
@@ -326,13 +326,12 @@ func StatesToStream(rule history_model.RuleMeta, states []state.StateTransition,
 		}
 
 		// Check if the alert is muted
-		isMuted := false
+		var silenceIds []string
+		var err error
 		if muteChecker != nil {
-			muted, err := muteChecker.IsMuted(rule.OrgID, labelsCopy)
+			silenceIds, err = muteChecker.GetSilenceIds(rule.OrgID, labelsCopy)
 			if err != nil {
 				logger.Error("Failed to check if alert is muted", "error", err, "labels", labelsCopy)
-			} else {
-				isMuted = muted
 			}
 		}
 
@@ -353,7 +352,7 @@ func StatesToStream(rule history_model.RuleMeta, states []state.StateTransition,
 			Error:                     errMsg,
 			EvaluationDurationSeconds: state.EvaluationDuration.Seconds(),
 			ThresholdInputValue:       thresholdInputValue,
-			IsMuted:                   isMuted,
+			SilenceIds:                silenceIds,
 		}
 
 		jsn, err := json.Marshal(entry)
@@ -416,7 +415,7 @@ type LokiEntry struct {
 	Annotations               map[string]string `json:"annotations"`
 	EvaluationDurationSeconds float64           `json:"evaluationDurationSeconds"`
 	ThresholdInputValue       float64           `json:"thresholdInputValue"`
-	IsMuted                   bool              `json:"isMuted"`
+	SilenceIds                []string          `json:"silenceIds"`
 }
 
 func valuesAsDataBlob(state *state.State) *simplejson.Json {

@@ -17,7 +17,7 @@ type MultiOrgAlertmanagerMuteChecker struct {
 }
 
 type muteChecker interface {
-	Mutes(labels data.Labels) (bool, error)
+	GetSilenceIds(labels data.Labels) ([]string, error)
 }
 
 // NewMultiOrgAlertmanagerMuteChecker creates a new mute checker that uses the MultiOrgAlertmanager
@@ -31,15 +31,15 @@ func NewMultiOrgAlertmanagerMuteChecker(moa OrgAlertmanager) *MultiOrgAlertmanag
 }
 
 // IsMuted checks if an alert with the given labels is muted
-func (c *MultiOrgAlertmanagerMuteChecker) IsMuted(orgID int64, labels data.Labels) (bool, error) {
+func (c *MultiOrgAlertmanagerMuteChecker) GetSilenceIds(orgID int64, labels data.Labels) ([]string, error) {
 	if c.moa == nil {
-		return false, nil
+		return nil, nil
 	}
 
 	// Get the alertmanager for this org
 	am, err := c.moa.AlertmanagerFor(orgID)
 	if err != nil {
-		return false, fmt.Errorf("failed to get alertmanager for org %d: %w", orgID, err)
+		return nil, fmt.Errorf("failed to get alertmanager for org %d: %w", orgID, err)
 	}
 
 	// Check if the alertmanager has the Mutes method
@@ -48,8 +48,8 @@ func (c *MultiOrgAlertmanagerMuteChecker) IsMuted(orgID int64, labels data.Label
 	muteAM, ok := am.(muteChecker)
 	if !ok {
 		// If the alertmanager doesn't support mute checking, return false
-		return false, nil
+		return nil, nil
 	}
 
-	return muteAM.Mutes(labels)
+	return muteAM.GetSilenceIds(labels)
 }
