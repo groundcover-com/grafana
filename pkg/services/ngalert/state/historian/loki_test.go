@@ -43,7 +43,7 @@ func TestRemoteLokiBackend(t *testing.T) {
 			l := log.NewNopLogger()
 			states := singleFromNormal(&state.State{State: eval.Normal})
 
-			res := StatesToStream(context.Background(), rule, states, nil, l, false, nil)
+			res := StatesToStream(rule, states, nil, l, false, nil)
 
 			require.Empty(t, res.Values)
 		})
@@ -53,7 +53,7 @@ func TestRemoteLokiBackend(t *testing.T) {
 			l := log.NewNopLogger()
 			states := singleFromNormal(&state.State{State: eval.Error, Error: fmt.Errorf("oh no")})
 
-			res := StatesToStream(context.Background(), rule, states, nil, l, false, nil)
+			res := StatesToStream(rule, states, nil, l, false, nil)
 
 			entry := requireSingleEntry(t, res)
 			require.Contains(t, entry.Error, "oh no")
@@ -64,7 +64,7 @@ func TestRemoteLokiBackend(t *testing.T) {
 			l := log.NewNopLogger()
 			states := singleFromNormal(&state.State{State: eval.NoData})
 
-			res := StatesToStream(context.Background(), rule, states, nil, l, false, nil)
+			res := StatesToStream(rule, states, nil, l, false, nil)
 
 			_ = requireSingleEntry(t, res)
 		})
@@ -77,7 +77,7 @@ func TestRemoteLokiBackend(t *testing.T) {
 				Labels: data.Labels{"a": "b"},
 			})
 
-			res := StatesToStream(context.Background(), rule, states, nil, l, false, nil)
+			res := StatesToStream(rule, states, nil, l, false, nil)
 
 			exp := map[string]string{
 				StateHistoryLabelKey: StateHistoryLabelValue,
@@ -96,7 +96,7 @@ func TestRemoteLokiBackend(t *testing.T) {
 				Labels: data.Labels{"__private__": "b"},
 			})
 
-			res := StatesToStream(context.Background(), rule, states, nil, l, false, nil)
+			res := StatesToStream(rule, states, nil, l, false, nil)
 
 			require.NotContains(t, res.Stream, "__private__")
 		})
@@ -109,7 +109,7 @@ func TestRemoteLokiBackend(t *testing.T) {
 				Labels: data.Labels{"a": "b"},
 			})
 
-			res := StatesToStream(context.Background(), rule, states, nil, l, false, nil)
+			res := StatesToStream(rule, states, nil, l, false, nil)
 
 			entry := requireSingleEntry(t, res)
 
@@ -126,7 +126,7 @@ func TestRemoteLokiBackend(t *testing.T) {
 				Labels: data.Labels{"statelabel": "labelvalue"},
 			})
 
-			res := StatesToStream(context.Background(), rule, states, nil, l, false, nil)
+			res := StatesToStream(rule, states, nil, l, false, nil)
 
 			entry := requireSingleEntry(t, res)
 			require.Contains(t, entry.InstanceLabels, "statelabel")
@@ -144,10 +144,10 @@ func TestRemoteLokiBackend(t *testing.T) {
 				},
 			})
 
-			res := StatesToStream(context.Background(), rule, states, nil, l, false, nil)
+			res := StatesToStream(rule, states, nil, l, false, nil)
 
 			entry := requireSingleEntry(t, res)
-			require.Len(t, entry.InstanceLabels, 3)
+			require.Len(t, entry.InstanceLabels, 4) // 3 original labels + monitor_name
 		})
 
 		t.Run("serializes values when regular", func(t *testing.T) {
@@ -158,7 +158,7 @@ func TestRemoteLokiBackend(t *testing.T) {
 				Values: map[string]float64{"A": 2.0, "B": 5.5},
 			})
 
-			res := StatesToStream(context.Background(), rule, states, nil, l, false, nil)
+			res := StatesToStream(rule, states, nil, l, false, nil)
 
 			entry := requireSingleEntry(t, res)
 			require.NotNil(t, entry.Values)
@@ -177,7 +177,7 @@ func TestRemoteLokiBackend(t *testing.T) {
 				Labels: data.Labels{"a": "b"},
 			})
 
-			res := StatesToStream(context.Background(), rule, states, nil, l, false, nil)
+			res := StatesToStream(rule, states, nil, l, false, nil)
 
 			entry := requireSingleEntry(t, res)
 			require.Equal(t, rule.Condition, entry.Condition)
@@ -195,10 +195,13 @@ func TestRemoteLokiBackend(t *testing.T) {
 				},
 			})
 
-			res := StatesToStream(context.Background(), rule, states, nil, l, false, nil)
+			res := StatesToStream(rule, states, nil, l, false, nil)
 
 			entry := requireSingleEntry(t, res)
-			exp := labelFingerprint(states[0].Labels)
+			// The fingerprint should include the monitor_name label that was added
+			labelsWithMonitorName := states[0].Labels.Copy()
+			labelsWithMonitorName["monitor_name"] = rule.Title
+			exp := labelFingerprint(labelsWithMonitorName)
 			require.Equal(t, exp, entry.Fingerprint)
 		})
 
@@ -218,7 +221,7 @@ func TestRemoteLokiBackend(t *testing.T) {
 				muted: true,
 			}
 
-			res := StatesToStream(context.Background(), rule, states, nil, l, false, muteChecker)
+			res := StatesToStream(rule, states, nil, l, false, muteChecker)
 
 			entry := requireSingleEntry(t, res)
 			require.True(t, entry.IsMuted, "Alert should be marked as muted")
@@ -240,7 +243,7 @@ func TestRemoteLokiBackend(t *testing.T) {
 				muted: false,
 			}
 
-			res := StatesToStream(context.Background(), rule, states, nil, l, false, muteChecker)
+			res := StatesToStream(rule, states, nil, l, false, muteChecker)
 
 			entry := requireSingleEntry(t, res)
 			require.False(t, entry.IsMuted, "Alert should not be marked as muted")
@@ -254,7 +257,7 @@ type mockMuteChecker struct {
 	err   error
 }
 
-func (m *mockMuteChecker) IsMuted(ctx context.Context, orgID int64, labels data.Labels) (bool, error) {
+func (m *mockMuteChecker) IsMuted(orgID int64, labels data.Labels) (bool, error) {
 	if m.err != nil {
 		return false, m.err
 	}

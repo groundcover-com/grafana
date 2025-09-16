@@ -81,7 +81,7 @@ type remoteLokiClient interface {
 
 // MuteChecker is an interface for checking if an alert is muted based on its labels
 type MuteChecker interface {
-	IsMuted(ctx context.Context, orgID int64, labels data.Labels) (bool, error)
+	IsMuted(orgID int64, labels data.Labels) (bool, error)
 }
 
 // RemoteLokibackend is a state.Historian that records state history to an external Loki instance.
@@ -118,7 +118,7 @@ func (h *RemoteLokiBackend) TestConnection(ctx context.Context) error {
 // Record writes a number of state transitions for a given rule to an external Loki instance.
 func (h *RemoteLokiBackend) Record(ctx context.Context, rule history_model.RuleMeta, states []state.StateTransition) <-chan error {
 	logger := h.log.FromContext(ctx)
-	logStream := StatesToStream(ctx, rule, states, h.externalLabels, logger, h.logAll, h.muteChecker)
+	logStream := StatesToStream(rule, states, h.externalLabels, logger, h.logAll, h.muteChecker)
 
 	errCh := make(chan error, 1)
 	if len(logStream.Values) == 0 {
@@ -285,7 +285,7 @@ func merge(res []Stream, folderUIDToFilter []string) (*data.Frame, error) {
 	return frame, nil
 }
 
-func StatesToStream(ctx context.Context, rule history_model.RuleMeta, states []state.StateTransition, externalLabels map[string]string, logger log.Logger, logAll bool, muteChecker MuteChecker) Stream {
+func StatesToStream(rule history_model.RuleMeta, states []state.StateTransition, externalLabels map[string]string, logger log.Logger, logAll bool, muteChecker MuteChecker) Stream {
 	labels := mergeLabels(make(map[string]string), externalLabels)
 	// System-defined labels take precedence over user-defined external labels.
 	labels[StateHistoryLabelKey] = StateHistoryLabelValue
@@ -298,8 +298,16 @@ func StatesToStream(ctx context.Context, rule history_model.RuleMeta, states []s
 		if !shouldRecord(state) && !logAll {
 			continue
 		}
-		state.Labels[MonitorNameLabel] = rule.Title
-		sanitizedLabels := removePrivateLabels(state.Labels)
+		// Create a copy of labels to avoid modifying the original state
+		// If labels are nil, initialize an empty map
+		var labelsCopy data.Labels
+		if state.Labels != nil {
+			labelsCopy = state.Labels.Copy()
+		} else {
+			labelsCopy = data.Labels{}
+		}
+		labelsCopy[MonitorNameLabel] = rule.Title
+		sanitizedLabels := removePrivateLabels(labelsCopy)
 		var errMsg string
 		if state.State.State == eval.Error {
 			errMsg = state.Error.Error()
@@ -320,12 +328,11 @@ func StatesToStream(ctx context.Context, rule history_model.RuleMeta, states []s
 		// Check if the alert is muted
 		isMuted := false
 		if muteChecker != nil {
-			muted, err := muteChecker.IsMuted(ctx, rule.OrgID, state.Labels)
+			muted, err := muteChecker.IsMuted(rule.OrgID, labelsCopy)
 			if err != nil {
-				logger.Error("Failed to check if alert is muted", "error", err, "labels", state.Labels)
+				logger.Error("Failed to check if alert is muted", "error", err, "labels", labelsCopy)
 			} else {
 				isMuted = muted
-				logger.Info("Mute check completed", "labels", state.Labels, "isMuted", isMuted)
 			}
 		}
 
@@ -337,7 +344,7 @@ func StatesToStream(ctx context.Context, rule history_model.RuleMeta, states []s
 			Condition:                 rule.Condition,
 			DashboardUID:              rule.DashboardUID,
 			PanelID:                   rule.PanelID,
-			Fingerprint:               calculateFingerprint(state.Labels),
+			Fingerprint:               calculateFingerprint(labelsCopy),
 			RuleTitle:                 rule.Title,
 			RuleID:                    rule.ID,
 			RuleUID:                   rule.UID,

@@ -1,7 +1,6 @@
 package historian
 
 import (
-	"context"
 	"fmt"
 
 	"github.com/grafana/grafana-plugin-sdk-go/data"
@@ -18,7 +17,7 @@ type MultiOrgAlertmanagerMuteChecker struct {
 }
 
 type muteChecker interface {
-	Mutes(ctx context.Context, labels data.Labels) (bool, error)
+	Mutes(labels data.Labels) (bool, error)
 }
 
 // NewMultiOrgAlertmanagerMuteChecker creates a new mute checker that uses the MultiOrgAlertmanager
@@ -32,7 +31,7 @@ func NewMultiOrgAlertmanagerMuteChecker(moa OrgAlertmanager) *MultiOrgAlertmanag
 }
 
 // IsMuted checks if an alert with the given labels is muted
-func (c *MultiOrgAlertmanagerMuteChecker) IsMuted(ctx context.Context, orgID int64, labels data.Labels) (bool, error) {
+func (c *MultiOrgAlertmanagerMuteChecker) IsMuted(orgID int64, labels data.Labels) (bool, error) {
 	if c.moa == nil {
 		return false, nil
 	}
@@ -52,5 +51,5 @@ func (c *MultiOrgAlertmanagerMuteChecker) IsMuted(ctx context.Context, orgID int
 		return false, nil
 	}
 
-	return muteAM.Mutes(ctx, labels)
+	return muteAM.Mutes(labels)
 }
