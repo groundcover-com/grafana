@@ -4,11 +4,78 @@ import (
 	"context"
 	"fmt"
 	"net/url"
+	"regexp"
 	"strings"
 	"time"
 
 	"github.com/flosch/pongo2/v6"
 )
+
+func init() {
+	// Register custom filters for label manipulation
+	pongo2.RegisterFilter("filterLabels", filterLabelsFilter)
+	pongo2.RegisterFilter("removeLabels", removeLabelsFilter)
+	pongo2.RegisterFilter("filterLabelsRe", filterLabelsReFilter)
+	pongo2.RegisterFilter("removeLabelsRe", removeLabelsReFilter)
+}
+
+// filterLabelsFilter keeps only labels matching the given string.
+func filterLabelsFilter(in *pongo2.Value, param *pongo2.Value) (*pongo2.Value, *pongo2.Error) {
+	labels, ok := in.Interface().(Labels)
+	if !ok {
+		return pongo2.AsValue(""), nil
+	}
+	match := param.String()
+	filtered := filterLabelsFunc(labels, match)
+	return pongo2.AsValue(filtered.String()), nil
+}
+
+// removeLabelsFilter removes labels matching the given string.
+func removeLabelsFilter(in *pongo2.Value, param *pongo2.Value) (*pongo2.Value, *pongo2.Error) {
+	labels, ok := in.Interface().(Labels)
+	if !ok {
+		return pongo2.AsValue(""), nil
+	}
+	match := param.String()
+	filtered := removeLabelsFunc(labels, match)
+	return pongo2.AsValue(filtered.String()), nil
+}
+
+// filterLabelsReFilter keeps only labels matching the given regex pattern.
+func filterLabelsReFilter(in *pongo2.Value, param *pongo2.Value) (*pongo2.Value, *pongo2.Error) {
+	labels, ok := in.Interface().(Labels)
+	if !ok {
+		return pongo2.AsValue(""), nil
+	}
+	pattern := param.String()
+	// Validate regex before calling function that uses MustCompile
+	if _, err := regexp.Compile(pattern); err != nil {
+		return nil, &pongo2.Error{
+			Sender:    "filter:filterLabelsRe",
+			OrigError: fmt.Errorf("invalid regex pattern: %w", err),
+		}
+	}
+	filtered := filterLabelsReFunc(labels, pattern)
+	return pongo2.AsValue(filtered.String()), nil
+}
+
+// removeLabelsReFilter removes labels matching the given regex pattern.
+func removeLabelsReFilter(in *pongo2.Value, param *pongo2.Value) (*pongo2.Value, *pongo2.Error) {
+	labels, ok := in.Interface().(Labels)
+	if !ok {
+		return pongo2.AsValue(""), nil
+	}
+	pattern := param.String()
+	// Validate regex before calling function that uses MustCompile
+	if _, err := regexp.Compile(pattern); err != nil {
+		return nil, &pongo2.Error{
+			Sender:    "filter:removeLabelsRe",
+			OrigError: fmt.Errorf("invalid regex pattern: %w", err),
+		}
+	}
+	filtered := removeLabelsReFunc(labels, pattern)
+	return pongo2.AsValue(filtered.String()), nil
+}
 
 // ExpandJinja2 expands a Jinja2 template with the given data.
 //

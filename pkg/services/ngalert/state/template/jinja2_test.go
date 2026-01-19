@@ -176,3 +176,116 @@ func TestExpandJinja2_StringFunctions(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "WEB-SERVER-1", result)
 }
+
+func TestExpandJinja2_CustomFilters(t *testing.T) {
+	tests := []struct {
+		name     string
+		tmpl     string
+		data     Data
+		expected string
+	}{
+		{
+			name:     "filterLabels",
+			tmpl:     "{{ labels|filterLabels:\"pod\" }}",
+			data:     Data{Labels: Labels{"pod": "web-1", "namespace": "prod"}},
+			expected: "pod=web-1",
+		},
+		{
+			name:     "removeLabels",
+			tmpl:     "{{ labels|removeLabels:\"namespace\" }}",
+			data:     Data{Labels: Labels{"pod": "web-1", "namespace": "prod"}},
+			expected: "pod=web-1",
+		},
+		{
+			name:     "filterLabelsRe",
+			tmpl:     "{{ labels|filterLabelsRe:\"pod.*\" }}",
+			data:     Data{Labels: Labels{"pod": "web-1", "pod_name": "api", "namespace": "prod"}},
+			expected: "pod=web-1, pod_name=api",
+		},
+		{
+			name:     "removeLabelsRe",
+			tmpl:     "{{ labels|removeLabelsRe:\"pod.*\" }}",
+			data:     Data{Labels: Labels{"pod": "web-1", "pod_name": "api", "namespace": "prod"}},
+			expected: "namespace=prod",
+		},
+	}
+
+	externalURL, _ := url.Parse("http://localhost:3000")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := ExpandJinja2(context.Background(), "test", tt.tmpl, tt.data, externalURL, time.Now())
+			require.NoError(t, err)
+			require.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+func TestExpandJinja2_InvalidRegexPatterns(t *testing.T) {
+	tests := []struct {
+		name string
+		tmpl string
+	}{
+		{
+			name: "filterLabelsRe with invalid regex",
+			tmpl: "{{ labels|filterLabelsRe:\"[invalid\" }}",
+		},
+		{
+			name: "removeLabelsRe with invalid regex",
+			tmpl: "{{ labels|removeLabelsRe:\"[invalid\" }}",
+		},
+	}
+
+	data := Data{Labels: Labels{"pod": "web-1", "namespace": "prod"}}
+	externalURL, _ := url.Parse("http://localhost:3000")
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Should return error, not panic
+			_, err := ExpandJinja2(context.Background(), "test", tt.tmpl, data, externalURL, time.Now())
+			require.Error(t, err)
+			var expandErr ExpandError
+			require.ErrorAs(t, err, &expandErr)
+			require.Contains(t, expandErr.Error(), "invalid regex pattern")
+		})
+	}
+}
+
+func TestExpandJinja2_EmptyLabels(t *testing.T) {
+	tests := []struct {
+		name     string
+		tmpl     string
+		expected string
+	}{
+		{
+			name:     "filterLabels with empty labels",
+			tmpl:     "{{ labels|filterLabels:\"pod\" }}",
+			expected: "",
+		},
+		{
+			name:     "removeLabels with empty labels",
+			tmpl:     "{{ labels|removeLabels:\"pod\" }}",
+			expected: "",
+		},
+		{
+			name:     "filterLabelsRe with empty labels",
+			tmpl:     "{{ labels|filterLabelsRe:\"pod.*\" }}",
+			expected: "",
+		},
+		{
+			name:     "removeLabelsRe with empty labels",
+			tmpl:     "{{ labels|removeLabelsRe:\"pod.*\" }}",
+			expected: "",
+		},
+	}
+
+	data := Data{Labels: Labels{}}
+	externalURL, _ := url.Parse("http://localhost:3000")
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := ExpandJinja2(context.Background(), "test", tt.tmpl, data, externalURL, time.Now())
+			require.NoError(t, err)
+			require.Equal(t, tt.expected, result)
+		})
+	}
+}
