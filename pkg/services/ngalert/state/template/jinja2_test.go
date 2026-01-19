@@ -75,3 +75,46 @@ func TestExpandJinja2_ValuesMapAccess(t *testing.T) {
 	// Float values are rendered with full precision by pongo2
 	require.Equal(t, "Query A value: 123.450000, instance: localhost:9090", result)
 }
+
+func TestExpandJinja2_Conditionals(t *testing.T) {
+	tests := []struct {
+		name     string
+		tmpl     string
+		data     Data
+		expected string
+	}{
+		{
+			name:     "if equals",
+			tmpl:     "{% if labels.severity == 'critical' %}CRITICAL{% else %}normal{% endif %}",
+			data:     Data{Labels: Labels{"severity": "critical"}},
+			expected: "CRITICAL",
+		},
+		{
+			name:     "if not equals",
+			tmpl:     "{% if labels.severity != 'critical' %}not critical{% endif %}",
+			data:     Data{Labels: Labels{"severity": "warning"}},
+			expected: "not critical",
+		},
+		{
+			name:     "if greater than",
+			tmpl:     "{% if values.A.value > 90 %}HIGH{% else %}LOW{% endif %}",
+			data:     Data{Values: map[string]Value{"A": {Value: 95.5}}},
+			expected: "HIGH",
+		},
+		{
+			name:     "if less than",
+			tmpl:     "{% if values.A.value < 50 %}LOW{% else %}HIGH{% endif %}",
+			data:     Data{Values: map[string]Value{"A": {Value: 30.0}}},
+			expected: "LOW",
+		},
+	}
+
+	externalURL, _ := url.Parse("http://localhost:3000")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := ExpandJinja2(context.Background(), "test", tt.tmpl, tt.data, externalURL, time.Now())
+			require.NoError(t, err)
+			require.Equal(t, tt.expected, result)
+		})
+	}
+}
