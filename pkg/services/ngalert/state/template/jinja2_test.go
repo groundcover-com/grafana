@@ -118,3 +118,61 @@ func TestExpandJinja2_Conditionals(t *testing.T) {
 		})
 	}
 }
+
+func TestExpandJinja2_Loops(t *testing.T) {
+	data := Data{
+		Labels: Labels{"pod": "web-1", "namespace": "prod", "service": "api"},
+	}
+	tmpl := "{% for key, val in labels %}{{ key }}={{ val }}{% if not forloop.Last %}, {% endif %}{% endfor %}"
+	externalURL, _ := url.Parse("http://localhost:3000")
+
+	result, err := ExpandJinja2(context.Background(), "test", tmpl, data, externalURL, time.Now())
+
+	require.NoError(t, err)
+	// Labels iteration order may vary, just check it contains expected parts
+	require.Contains(t, result, "pod=web-1")
+	require.Contains(t, result, "namespace=prod")
+	require.Contains(t, result, "service=api")
+}
+
+func TestExpandJinja2_SetVariable(t *testing.T) {
+	data := Data{
+		Labels: Labels{"pod": "web-1"},
+		Values: map[string]Value{"A": {Value: 95.5}},
+	}
+	// Pongo2 uses {% if %}{% set %}{% endif %} pattern instead of inline conditionals
+	tmpl := "{% if values.A.value > 90 %}{% set status = 'critical' %}{% else %}{% set status = 'normal' %}{% endif %}Status: {{ status }}"
+	externalURL, _ := url.Parse("http://localhost:3000")
+
+	result, err := ExpandJinja2(context.Background(), "test", tmpl, data, externalURL, time.Now())
+
+	require.NoError(t, err)
+	require.Equal(t, "Status: critical", result)
+}
+
+func TestExpandJinja2_MathOperations(t *testing.T) {
+	data := Data{
+		Values: map[string]Value{"A": {Value: 100.0}},
+	}
+	tmpl := "Value: {{ values.A.value / 2 }}"
+	externalURL, _ := url.Parse("http://localhost:3000")
+
+	result, err := ExpandJinja2(context.Background(), "test", tmpl, data, externalURL, time.Now())
+
+	require.NoError(t, err)
+	// Pongo2 renders floats with full precision
+	require.Equal(t, "Value: 50.000000", result)
+}
+
+func TestExpandJinja2_StringFunctions(t *testing.T) {
+	data := Data{
+		Labels: Labels{"pod": "web-server-1"},
+	}
+	tmpl := "{{ labels.pod|upper }}"
+	externalURL, _ := url.Parse("http://localhost:3000")
+
+	result, err := ExpandJinja2(context.Background(), "test", tmpl, data, externalURL, time.Now())
+
+	require.NoError(t, err)
+	require.Equal(t, "WEB-SERVER-1", result)
+}
