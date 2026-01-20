@@ -332,10 +332,8 @@ func StatesToStream(rule history_model.RuleMeta, states []state.StateTransition,
 			}
 		}
 
-		// Parse header template if present
 		var parsedHeader string
 		if headerTemplate := state.Annotations[models.GCIssueHeaderAnnotation]; headerTemplate != "" {
-			// Convert data.Labels to map[string]string for template expansion
 			labelMap := make(map[string]string, len(state.Labels))
 			for k, v := range state.Labels {
 				labelMap[k] = v
@@ -343,7 +341,6 @@ func StatesToStream(rule history_model.RuleMeta, states []state.StateTransition,
 			parsed, err := template.ExpandJinja2Header(context.Background(), headerTemplate, labelMap)
 			if err != nil {
 				logger.Warn("Failed to expand issue header template", "error", err, "template", headerTemplate)
-				// Keep the original template on error
 				parsedHeader = headerTemplate
 			} else {
 				parsedHeader = parsed
@@ -431,10 +428,8 @@ type LokiEntry struct {
 	Annotations               map[string]string `json:"annotations"`
 	EvaluationDurationSeconds float64           `json:"evaluationDurationSeconds"`
 	ThresholdInputValue       float64           `json:"thresholdInputValue"`
-	SilenceIds                []string          `json:"silenceIds"`
-	// Header is the Jinja2-parsed issue header from the _gc_issue_header annotation.
-	// Empty if no header template is configured.
-	Header string `json:"header"`
+	SilenceIds []string `json:"silenceIds"`
+	Header     string   `json:"header"`
 }
 
 func valuesAsDataBlob(state *state.State) *simplejson.Json {
