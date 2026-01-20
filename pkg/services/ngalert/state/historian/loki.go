@@ -368,7 +368,7 @@ func StatesToStream(rule history_model.RuleMeta, states []state.StateTransition,
 			EvaluationDurationSeconds: state.EvaluationDuration.Seconds(),
 			ThresholdInputValue:       thresholdInputValue,
 			SilenceIds:                silenceIds,
-			ParsedHeader:              parsedHeader,
+			Header:                    parsedHeader,
 		}
 
 		jsn, err := json.Marshal(entry)
@@ -432,9 +432,9 @@ type LokiEntry struct {
 	EvaluationDurationSeconds float64           `json:"evaluationDurationSeconds"`
 	ThresholdInputValue       float64           `json:"thresholdInputValue"`
 	SilenceIds                []string          `json:"silenceIds"`
-	// ParsedHeader is the Jinja2-parsed issue header from the _gc_issue_header annotation.
+	// Header is the Jinja2-parsed issue header from the _gc_issue_header annotation.
 	// Empty if no header template is configured.
-	ParsedHeader string `json:"parsed_header"`
+	Header string `json:"header"`
 }
 
 func valuesAsDataBlob(state *state.State) *simplejson.Json {
