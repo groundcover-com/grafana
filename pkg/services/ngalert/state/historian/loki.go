@@ -26,6 +26,7 @@ import (
 	"github.com/grafana/grafana/pkg/services/ngalert/models"
 	"github.com/grafana/grafana/pkg/services/ngalert/state"
 	history_model "github.com/grafana/grafana/pkg/services/ngalert/state/historian/model"
+	"github.com/grafana/grafana/pkg/services/ngalert/state/template"
 )
 
 const (
@@ -331,6 +332,24 @@ func StatesToStream(rule history_model.RuleMeta, states []state.StateTransition,
 			}
 		}
 
+		// Parse header template if present
+		var parsedHeader string
+		if headerTemplate := state.Annotations[models.GCIssueHeaderAnnotation]; headerTemplate != "" {
+			// Convert data.Labels to map[string]string for template expansion
+			labelMap := make(map[string]string, len(state.Labels))
+			for k, v := range state.Labels {
+				labelMap[k] = v
+			}
+			parsed, err := template.ExpandJinja2Header(context.Background(), headerTemplate, labelMap)
+			if err != nil {
+				logger.Warn("Failed to expand issue header template", "error", err, "template", headerTemplate)
+				// Keep the original template on error
+				parsedHeader = headerTemplate
+			} else {
+				parsedHeader = parsed
+			}
+		}
+
 		entry := LokiEntry{
 			SchemaVersion:             1,
 			Previous:                  state.PreviousFormatted(),
@@ -349,6 +368,7 @@ func StatesToStream(rule history_model.RuleMeta, states []state.StateTransition,
 			EvaluationDurationSeconds: state.EvaluationDuration.Seconds(),
 			ThresholdInputValue:       thresholdInputValue,
 			SilenceIds:                silenceIds,
+			ParsedHeader:              parsedHeader,
 		}
 
 		jsn, err := json.Marshal(entry)
@@ -412,6 +432,9 @@ type LokiEntry struct {
 	EvaluationDurationSeconds float64           `json:"evaluationDurationSeconds"`
 	ThresholdInputValue       float64           `json:"thresholdInputValue"`
 	SilenceIds                []string          `json:"silenceIds"`
+	// ParsedHeader is the Jinja2-parsed issue header from the _gc_issue_header annotation.
+	// Empty if no header template is configured.
+	ParsedHeader string `json:"parsed_header"`
 }
 
 func valuesAsDataBlob(state *state.State) *simplejson.Json {

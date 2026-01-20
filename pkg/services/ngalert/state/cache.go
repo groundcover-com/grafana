@@ -103,20 +103,10 @@ func expandAnnotationsAndLabels(ctx context.Context, log log.Logger, alertRule *
 	// of labels that can be expanded in custom labels and annotations.
 	templateData := template.NewData(mergeLabels(extraLabels, resultLabels), result)
 
-	// Check if Jinja2 templating is requested via annotation
-	useJinja2 := alertRule.Annotations[ngModels.GCTemplateLanguageAnnotation] == ngModels.TemplateLanguageJinja2
-
-	// For now, do nothing with these errors as they are already logged in expand/expandJinja2.
+	// For now, do nothing with these errors as they are already logged in expand.
 	// In the future, we want to show these errors to the user somehow.
-	// Choose expander based on templating language annotation
-	var labels, annotations map[string]string
-	if useJinja2 {
-		labels, _ = expandJinja2(ctx, log, alertRule.Title, alertRule.Labels, templateData, externalURL, result.EvaluatedAt)
-		annotations, _ = expandJinja2(ctx, log, alertRule.Title, alertRule.Annotations, templateData, externalURL, result.EvaluatedAt)
-	} else {
-		labels, _ = expand(ctx, log, alertRule.Title, alertRule.Labels, templateData, externalURL, result.EvaluatedAt)
-		annotations, _ = expand(ctx, log, alertRule.Title, alertRule.Annotations, templateData, externalURL, result.EvaluatedAt)
-	}
+	labels, _ := expand(ctx, log, alertRule.Title, alertRule.Labels, templateData, externalURL, result.EvaluatedAt)
+	annotations, _ := expand(ctx, log, alertRule.Title, alertRule.Annotations, templateData, externalURL, result.EvaluatedAt)
 
 	lbs := make(data.Labels, len(extraLabels)+len(labels)+len(resultLabels))
 	dupes := make(data.Labels)
@@ -241,29 +231,6 @@ func expand(ctx context.Context, log log.Logger, name string, original map[strin
 		result, err := template.Expand(ctx, name, v, data, externalURL, evaluatedAt)
 		if err != nil {
 			log.Error("Error in expanding template", "error", err)
-			errs = errors.Join(errs, err)
-			// keep the original template on error
-			expanded[k] = v
-		} else {
-			expanded[k] = result
-		}
-	}
-	return expanded, errs
-}
-
-// expandJinja2 expands templates using Jinja2 syntax.
-// If a template cannot be expanded due to an error in the template the original template is
-// maintained and an error is added to the multierror. All errors in the multierror are
-// template.ExpandError errors.
-func expandJinja2(ctx context.Context, log log.Logger, name string, original map[string]string, data template.Data, externalURL *url.URL, evaluatedAt time.Time) (map[string]string, error) {
-	var (
-		errs     error
-		expanded = make(map[string]string, len(original))
-	)
-	for k, v := range original {
-		result, err := template.ExpandJinja2(ctx, name, v, data, externalURL, evaluatedAt)
-		if err != nil {
-			log.Error("Error in expanding Jinja2 template", "error", err)
 			errs = errors.Join(errs, err)
 			// keep the original template on error
 			expanded[k] = v
