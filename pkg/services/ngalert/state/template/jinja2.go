@@ -1,7 +1,6 @@
 package template
 
 import (
-	"context"
 	"strings"
 
 	"github.com/flosch/pongo2/v6"
@@ -9,7 +8,7 @@ import (
 
 // ExpandJinja2Header expands a Jinja2-style header template with the given labels.
 // Supports {{ alert.labels.X }} syntax for variable interpolation.
-func ExpandJinja2Header(ctx context.Context, tmpl string, labels map[string]string) (string, error) {
+func ExpandJinja2Header(tmpl string, labels map[string]string) (string, error) {
 	if !strings.Contains(tmpl, "{{") {
 		return tmpl, nil
 	}

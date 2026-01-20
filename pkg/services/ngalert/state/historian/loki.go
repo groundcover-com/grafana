@@ -338,7 +338,7 @@ func StatesToStream(rule history_model.RuleMeta, states []state.StateTransition,
 			for k, v := range state.Labels {
 				labelMap[k] = v
 			}
-			parsed, err := template.ExpandJinja2Header(context.Background(), headerTemplate, labelMap)
+			parsed, err := template.ExpandJinja2Header(headerTemplate, labelMap)
 			if err != nil {
 				logger.Warn("Failed to expand issue header template", "error", err, "template", headerTemplate)
 				parsedHeader = headerTemplate

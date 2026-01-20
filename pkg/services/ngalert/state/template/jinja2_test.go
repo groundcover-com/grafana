@@ -1,7 +1,6 @@
 package template
 
 import (
-	"context"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -13,7 +12,7 @@ func TestExpandJinja2Header_BasicVariables(t *testing.T) {
 		"namespace": "prod",
 	}
 
-	result, err := ExpandJinja2Header(context.Background(), "Pod {{ alert.labels.pod }} in {{ alert.labels.namespace }}", labels)
+	result, err := ExpandJinja2Header("Pod {{ alert.labels.pod }} in {{ alert.labels.namespace }}", labels)
 
 	require.NoError(t, err)
 	require.Equal(t, "Pod web-1 in prod", result)
@@ -22,7 +21,7 @@ func TestExpandJinja2Header_BasicVariables(t *testing.T) {
 func TestExpandJinja2Header_NoTemplateMarkers(t *testing.T) {
 	labels := map[string]string{"pod": "web-1"}
 
-	result, err := ExpandJinja2Header(context.Background(), "Plain text without markers", labels)
+	result, err := ExpandJinja2Header("Plain text without markers", labels)
 
 	require.NoError(t, err)
 	require.Equal(t, "Plain text without markers", result)
@@ -31,7 +30,7 @@ func TestExpandJinja2Header_NoTemplateMarkers(t *testing.T) {
 func TestExpandJinja2Header_InvalidSyntax(t *testing.T) {
 	labels := map[string]string{"pod": "web-1"}
 
-	_, err := ExpandJinja2Header(context.Background(), "{{ invalid syntax {% ", labels)
+	_, err := ExpandJinja2Header("{{ invalid syntax {% ", labels)
 
 	require.Error(t, err)
 	var expandErr ExpandError
@@ -41,7 +40,7 @@ func TestExpandJinja2Header_InvalidSyntax(t *testing.T) {
 func TestExpandJinja2Header_MissingLabel(t *testing.T) {
 	labels := map[string]string{"pod": "web-1"}
 
-	result, err := ExpandJinja2Header(context.Background(), "{{ alert.labels.nonexistent }}", labels)
+	result, err := ExpandJinja2Header("{{ alert.labels.nonexistent }}", labels)
 
 	require.NoError(t, err)
 	require.Equal(t, "", result)
@@ -50,14 +49,14 @@ func TestExpandJinja2Header_MissingLabel(t *testing.T) {
 func TestExpandJinja2Header_EmptyLabels(t *testing.T) {
 	labels := map[string]string{}
 
-	result, err := ExpandJinja2Header(context.Background(), "{{ alert.labels.pod }}", labels)
+	result, err := ExpandJinja2Header("{{ alert.labels.pod }}", labels)
 
 	require.NoError(t, err)
 	require.Equal(t, "", result)
 }
 
 func TestExpandJinja2Header_NilLabels(t *testing.T) {
-	result, err := ExpandJinja2Header(context.Background(), "{{ alert.labels.pod }}", nil)
+	result, err := ExpandJinja2Header("{{ alert.labels.pod }}", nil)
 
 	require.NoError(t, err)
 	require.Equal(t, "", result)
@@ -68,7 +67,7 @@ func TestExpandJinja2Header_SpecialCharactersInLabels(t *testing.T) {
 		"pod": "web-1 <test> & \"special\"",
 	}
 
-	result, err := ExpandJinja2Header(context.Background(), "Pod: {{ alert.labels.pod }}", labels)
+	result, err := ExpandJinja2Header("Pod: {{ alert.labels.pod }}", labels)
 
 	require.NoError(t, err)
 	require.Equal(t, "Pod: web-1 &lt;test&gt; &amp; &quot;special&quot;", result)
@@ -83,7 +82,7 @@ func TestExpandJinja2Header_MultiplePlaceholders(t *testing.T) {
 	}
 
 	tmpl := "[{{ alert.labels.cluster }}] {{ alert.labels.namespace }}/{{ alert.labels.service }}: {{ alert.labels.pod }}"
-	result, err := ExpandJinja2Header(context.Background(), tmpl, labels)
+	result, err := ExpandJinja2Header(tmpl, labels)
 
 	require.NoError(t, err)
 	require.Equal(t, "[us-east-1] prod/api: web-1", result)
@@ -92,7 +91,7 @@ func TestExpandJinja2Header_MultiplePlaceholders(t *testing.T) {
 func TestExpandJinja2Header_EmptyTemplate(t *testing.T) {
 	labels := map[string]string{"pod": "web-1"}
 
-	result, err := ExpandJinja2Header(context.Background(), "", labels)
+	result, err := ExpandJinja2Header("", labels)
 
 	require.NoError(t, err)
 	require.Equal(t, "", result)
