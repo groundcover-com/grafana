@@ -334,8 +334,8 @@ func StatesToStream(rule history_model.RuleMeta, states []state.StateTransition,
 
 		var parsedHeader string
 		if headerTemplate := state.Annotations[models.GCIssueHeaderAnnotation]; headerTemplate != "" {
-			labelMap := make(map[string]string, len(state.Labels))
-			for k, v := range state.Labels {
+			labelMap := make(map[string]string, len(sanitizedLabels))
+			for k, v := range sanitizedLabels {
 				labelMap[k] = v
 			}
 			parsed, err := template.ExpandJinja2Header(headerTemplate, labelMap)
