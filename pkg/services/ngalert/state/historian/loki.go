@@ -351,7 +351,7 @@ func StatesToStream(rule history_model.RuleMeta, states []state.StateTransition,
 					Threshold:   state.State.Values["threshold_1"],
 					State:       state.Formatted(),
 					Query:       rule.Query,
-					Creator:     "", // TODO: omerk
+					Creator:     state.Annotations["_gc_creator"],
 				}
 				parsed, err = template.ExpandJinja2Summary(summaryTemplate, summaryCtx)
 			} else {
