@@ -6,17 +6,35 @@ import (
 	"github.com/flosch/pongo2/v6"
 )
 
-// ExpandJinja2Header expands a Jinja2-style header template with the given labels.
-// Supports {{ alert.labels.X }} syntax for variable interpolation.
-func ExpandJinja2Header(tmpl string, labels map[string]string) (string, error) {
+// SummaryContext holds all the context fields available for summary template expansion.
+type SummaryContext struct {
+	MonitorName string
+	Severity    string
+	Labels      map[string]string
+	Value       float64
+	Threshold   float64
+	State       string
+	Query       string
+	Creator     string
+}
+
+// ExpandJinja2Summary expands a Jinja2-style summary template with the given context.
+// Supports variable interpolation using {{ variable }} syntax.
+// Available variables: monitor_name, severity, labels, value, threshold, state, query, creator
+func ExpandJinja2Summary(tmpl string, ctx SummaryContext) (string, error) {
 	if !strings.Contains(tmpl, "{{") {
 		return tmpl, nil
 	}
 
 	pongoCtx := pongo2.Context{
-		"alert": map[string]interface{}{
-			"labels": labels,
-		},
+		"monitor_name": ctx.MonitorName,
+		"severity":     ctx.Severity,
+		"labels":       ctx.Labels,
+		"value":        ctx.Value,
+		"threshold":    ctx.Threshold,
+		"state":        ctx.State,
+		"query":        ctx.Query,
+		"creator":      ctx.Creator,
 	}
 
 	tpl, err := pongo2.FromString(tmpl)

@@ -19,6 +19,7 @@ type RuleMeta struct {
 	DashboardUID string
 	PanelID      int64
 	Condition    string
+	Query        string
 }
 
 func NewRuleMeta(r *models.AlertRule, logger log.Logger) RuleMeta {
@@ -34,6 +35,18 @@ func NewRuleMeta(r *models.AlertRule, logger log.Logger) RuleMeta {
 		}
 		panelID = pid
 	}
+
+	var query string
+	for i := range r.Data {
+		if r.Data[i].RefID == r.Condition {
+			q, err := r.Data[i].GetQuery()
+			if err == nil {
+				query = q
+			}
+			break
+		}
+	}
+
 	return RuleMeta{
 		ID:           r.ID,
 		OrgID:        r.OrgID,
@@ -44,6 +57,7 @@ func NewRuleMeta(r *models.AlertRule, logger log.Logger) RuleMeta {
 		DashboardUID: dashUID,
 		PanelID:      panelID,
 		Condition:    r.Condition,
+		Query:        query,
 	}
 }
 

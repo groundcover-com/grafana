@@ -332,18 +332,30 @@ func StatesToStream(rule history_model.RuleMeta, states []state.StateTransition,
 			}
 		}
 
-		var parsedHeader string
-		if headerTemplate := state.Annotations[models.GCIssueHeaderAnnotation]; headerTemplate != "" {
+		var parsedSummary string
+		if summaryTemplate := state.Annotations[models.GCIssueHeaderAnnotation]; summaryTemplate != "" {
 			labelMap := make(map[string]string, len(sanitizedLabels))
 			for k, v := range sanitizedLabels {
 				labelMap[k] = v
 			}
-			parsed, err := template.ExpandJinja2Header(headerTemplate, labelMap)
+
+			summaryCtx := template.SummaryContext{
+				MonitorName: rule.Title,
+				Severity:    labelMap["_gc_severity"],
+				Labels:      labelMap,
+				Value:       state.State.Values["threshold_input_query"],
+				Threshold:   state.State.Values["threshold_1"],
+				State:       state.Formatted(),
+				Query:       rule.Query,
+				Creator:     "", // TODO: omerk
+			}
+
+			parsed, err := template.ExpandJinja2Summary(summaryTemplate, summaryCtx)
 			if err != nil {
-				logger.Warn("Failed to expand issue header template", "error", err, "template", headerTemplate)
-				parsedHeader = headerTemplate
+				logger.Warn("Failed to expand issue summary template", "error", err, "template", summaryTemplate)
+				parsedSummary = summaryTemplate
 			} else {
-				parsedHeader = parsed
+				parsedSummary = parsed
 			}
 		}
 
@@ -365,7 +377,7 @@ func StatesToStream(rule history_model.RuleMeta, states []state.StateTransition,
 			EvaluationDurationSeconds: state.EvaluationDuration.Seconds(),
 			ThresholdInputValue:       thresholdInputValue,
 			SilenceIds:                silenceIds,
-			Header:                    parsedHeader,
+			Summary:                   parsedSummary,
 		}
 
 		jsn, err := json.Marshal(entry)
@@ -428,8 +440,8 @@ type LokiEntry struct {
 	Annotations               map[string]string `json:"annotations"`
 	EvaluationDurationSeconds float64           `json:"evaluationDurationSeconds"`
 	ThresholdInputValue       float64           `json:"thresholdInputValue"`
-	SilenceIds []string `json:"silenceIds"`
-	Header     string   `json:"header"`
+	SilenceIds                []string          `json:"silenceIds"`
+	Summary                   string            `json:"summary"`
 }
 
 func valuesAsDataBlob(state *state.State) *simplejson.Json {
