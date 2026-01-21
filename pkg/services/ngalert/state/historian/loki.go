@@ -366,6 +366,8 @@ func StatesToStream(rule history_model.RuleMeta, states []state.StateTransition,
 			}
 		}
 
+		sanitizedLabels["_gc_query"] = rule.Query
+
 		entry := LokiEntry{
 			SchemaVersion:             1,
 			Previous:                  state.PreviousFormatted(),
@@ -385,7 +387,6 @@ func StatesToStream(rule history_model.RuleMeta, states []state.StateTransition,
 			ThresholdInputValue:       thresholdInputValue,
 			SilenceIds:                silenceIds,
 			Summary:                   parsedSummary,
-			Query:                     rule.Query,
 		}
 
 		jsn, err := json.Marshal(entry)
@@ -450,7 +451,6 @@ type LokiEntry struct {
 	ThresholdInputValue       float64           `json:"thresholdInputValue"`
 	SilenceIds                []string          `json:"silenceIds"`
 	Summary                   string            `json:"summary"`
-	Query                     string            `json:"query"`
 }
 
 func valuesAsDataBlob(state *state.State) *simplejson.Json {
