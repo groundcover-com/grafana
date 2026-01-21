@@ -339,18 +339,25 @@ func StatesToStream(rule history_model.RuleMeta, states []state.StateTransition,
 				labelMap[k] = v
 			}
 
-			summaryCtx := template.SummaryContext{
-				MonitorName: rule.Title,
-				Severity:    labelMap["_gc_severity"],
-				Labels:      labelMap,
-				Value:       state.State.Values["threshold_input_query"],
-				Threshold:   state.State.Values["threshold_1"],
-				State:       state.Formatted(),
-				Query:       rule.Query,
-				Creator:     "", // TODO: omerk
+			var parsed string
+			var err error
+
+			if state.Annotations[models.GCTemplateLanguageAnnotation] == "jinja2" {
+				summaryCtx := template.SummaryContext{
+					MonitorName: rule.Title,
+					Severity:    labelMap["_gc_severity"],
+					Labels:      labelMap,
+					Value:       state.State.Values["threshold_input_query"],
+					Threshold:   state.State.Values["threshold_1"],
+					State:       state.Formatted(),
+					Query:       rule.Query,
+					Creator:     "", // TODO: omerk
+				}
+				parsed, err = template.ExpandJinja2Summary(summaryTemplate, summaryCtx)
+			} else {
+				parsed, err = template.ExpandLegacySummary(summaryTemplate, labelMap)
 			}
 
-			parsed, err := template.ExpandJinja2Summary(summaryTemplate, summaryCtx)
 			if err != nil {
 				logger.Warn("Failed to expand issue summary template", "error", err, "template", summaryTemplate)
 				parsedSummary = summaryTemplate

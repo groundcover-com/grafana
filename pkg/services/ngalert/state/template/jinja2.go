@@ -21,6 +21,7 @@ type SummaryContext struct {
 // ExpandJinja2Summary expands a Jinja2-style summary template with the given context.
 // Supports variable interpolation using {{ variable }} syntax.
 // Available variables: monitor_name, severity, labels, value, threshold, state, query, creator
+// This should only be used when _gc_template_language annotation is set to "jinja2".
 func ExpandJinja2Summary(tmpl string, ctx SummaryContext) (string, error) {
 	if !strings.Contains(tmpl, "{{") {
 		return tmpl, nil
@@ -35,6 +36,33 @@ func ExpandJinja2Summary(tmpl string, ctx SummaryContext) (string, error) {
 		"state":        ctx.State,
 		"query":        ctx.Query,
 		"creator":      ctx.Creator,
+	}
+
+	tpl, err := pongo2.FromString(tmpl)
+	if err != nil {
+		return "", ExpandError{Tmpl: tmpl, Err: err}
+	}
+
+	result, err := tpl.Execute(pongoCtx)
+	if err != nil {
+		return "", ExpandError{Tmpl: tmpl, Err: err}
+	}
+
+	return result, nil
+}
+
+// ExpandLegacySummary expands a summary template using the legacy context format.
+// Supports {{ alert.labels.X }} syntax for variable interpolation.
+// This is the default when _gc_template_language annotation is not set to "jinja2".
+func ExpandLegacySummary(tmpl string, labels map[string]string) (string, error) {
+	if !strings.Contains(tmpl, "{{") {
+		return tmpl, nil
+	}
+
+	pongoCtx := pongo2.Context{
+		"alert": map[string]interface{}{
+			"labels": labels,
+		},
 	}
 
 	tpl, err := pongo2.FromString(tmpl)

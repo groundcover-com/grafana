@@ -203,3 +203,76 @@ func TestExpandJinja2Summary_AllFields(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "[warning] High CPU: web-1 in prod - Alerting (85.500000/80.000000) query=cpu &gt; 80 by=ops-team", result)
 }
+
+// Tests for ExpandLegacySummary
+
+func TestExpandLegacySummary_BasicVariables(t *testing.T) {
+	labels := map[string]string{
+		"pod":       "web-1",
+		"namespace": "prod",
+	}
+
+	result, err := ExpandLegacySummary("Pod {{ alert.labels.pod }} in {{ alert.labels.namespace }}", labels)
+
+	require.NoError(t, err)
+	require.Equal(t, "Pod web-1 in prod", result)
+}
+
+func TestExpandLegacySummary_NoTemplateMarkers(t *testing.T) {
+	labels := map[string]string{"pod": "web-1"}
+
+	result, err := ExpandLegacySummary("Plain text without markers", labels)
+
+	require.NoError(t, err)
+	require.Equal(t, "Plain text without markers", result)
+}
+
+func TestExpandLegacySummary_InvalidSyntax(t *testing.T) {
+	labels := map[string]string{"pod": "web-1"}
+
+	_, err := ExpandLegacySummary("{{ invalid syntax {% ", labels)
+
+	require.Error(t, err)
+	var expandErr ExpandError
+	require.ErrorAs(t, err, &expandErr)
+}
+
+func TestExpandLegacySummary_MissingLabel(t *testing.T) {
+	labels := map[string]string{"pod": "web-1"}
+
+	result, err := ExpandLegacySummary("{{ alert.labels.nonexistent }}", labels)
+
+	require.NoError(t, err)
+	require.Equal(t, "", result)
+}
+
+func TestExpandLegacySummary_EmptyLabels(t *testing.T) {
+	labels := map[string]string{}
+
+	result, err := ExpandLegacySummary("{{ alert.labels.pod }}", labels)
+
+	require.NoError(t, err)
+	require.Equal(t, "", result)
+}
+
+func TestExpandLegacySummary_NilLabels(t *testing.T) {
+	result, err := ExpandLegacySummary("{{ alert.labels.pod }}", nil)
+
+	require.NoError(t, err)
+	require.Equal(t, "", result)
+}
+
+func TestExpandLegacySummary_MultiplePlaceholders(t *testing.T) {
+	labels := map[string]string{
+		"pod":       "web-1",
+		"namespace": "prod",
+		"service":   "api",
+		"cluster":   "us-east-1",
+	}
+
+	tmpl := "[{{ alert.labels.cluster }}] {{ alert.labels.namespace }}/{{ alert.labels.service }}: {{ alert.labels.pod }}"
+	result, err := ExpandLegacySummary(tmpl, labels)
+
+	require.NoError(t, err)
+	require.Equal(t, "[us-east-1] prod/api: web-1", result)
+}

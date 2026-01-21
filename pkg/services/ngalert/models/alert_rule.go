@@ -157,6 +157,11 @@ const (
 
 	// GCIssueHeaderAnnotation holds the Jinja2 template for the alert issue summary.
 	GCIssueHeaderAnnotation = "_gc_issue_header"
+
+	// GCTemplateLanguageAnnotation specifies the template language to use for summary expansion.
+	// When set to "jinja2", uses the new context with monitor_name, severity, labels, value, threshold, state, query, creator.
+	// Otherwise, uses the legacy context with alert.labels.
+	GCTemplateLanguageAnnotation = "_gc_template_language"
 )
 
 const (
