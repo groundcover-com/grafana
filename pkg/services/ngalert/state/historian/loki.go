@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"html"
 	"maps"
 	"math"
 	"regexp"
@@ -15,6 +16,7 @@ import (
 	"github.com/benbjohnson/clock"
 	"github.com/grafana/grafana-plugin-sdk-go/data"
 	"go.opentelemetry.io/otel/trace"
+	"gopkg.in/yaml.v3"
 
 	"github.com/grafana/grafana/pkg/apimachinery/errutil"
 	"github.com/grafana/grafana/pkg/components/simplejson"
@@ -44,8 +46,10 @@ const (
 	errAnnotationName = "Error"
 )
 
+const gcMonitorYamlAnnotation = "_gc_monitor_yaml"
+
 var annotationsToDelete = map[string]struct{}{
-	"_gc_monitor_yaml": {},
+	gcMonitorYamlAnnotation: {},
 }
 
 const (
@@ -336,16 +340,18 @@ func StatesToStream(rule history_model.RuleMeta, states []state.StateTransition,
 		labelMap := make(map[string]string, len(sanitizedLabels))
 		maps.Copy(labelMap, sanitizedLabels)
 
+		gcQuery := extractGCQuery(state.Annotations[gcMonitorYamlAnnotation], logger)
+		sanitizedLabels[models.GCQueryLabel] = gcQuery
+
 		parsedSummary := expandSummaryTemplate(
 			state.Annotations[models.GCIssueHeaderAnnotation],
 			state.Annotations[models.GCTemplateLanguageAnnotation],
 			rule,
 			state,
 			labelMap,
+			gcQuery,
 			logger,
 		)
-
-		sanitizedLabels[models.GCQueryLabel] = rule.Query
 
 		entry := LokiEntry{
 			SchemaVersion:             1,
@@ -385,6 +391,56 @@ func StatesToStream(rule history_model.RuleMeta, states []state.StateTransition,
 		Stream: labels,
 		Values: samples,
 	}
+}
+
+// gcMonitorQuery represents a query from the _gc_monitor_yaml annotation.
+type gcMonitorQuery struct {
+	DataType      string `yaml:"dataType"`
+	Name          string `yaml:"-"` // ignored from yaml un/marshaling
+	Expression    string `yaml:"expression"`
+	InstantRollup string `yaml:"instantRollup"`
+}
+
+type gcMonitorYaml struct {
+	Model struct {
+		Queries []gcMonitorQuery `yaml:"queries"`
+	} `yaml:"model"`
+}
+
+// extractGCQuery parses the _gc_monitor_yaml annotation and extracts model.queries[0] as a YAML string.
+// The expected YAML structure is:
+//
+//	model:
+//	  queries:
+//	  - dataType: logs
+//	    name: threshold_input_query
+//	    expression: '* | stats by (cluster) count() count_all_result'
+//	    instantRollup: 5 minutes
+func extractGCQuery(yamlContent string, logger log.Logger) string {
+	if yamlContent == "" {
+		return ""
+	}
+
+	cleanYaml := html.UnescapeString(string(yamlContent))
+
+	var parsed gcMonitorYaml
+	if err := yaml.Unmarshal([]byte(cleanYaml), &parsed); err != nil {
+		logger.Debug("Failed to parse _gc_monitor_yaml annotation", "error", err)
+		return ""
+	}
+
+	if len(parsed.Model.Queries) == 0 {
+		logger.Debug("No queries found in _gc_monitor_yaml annotation")
+		return ""
+	}
+
+	queryYAML, err := yaml.Marshal(parsed.Model.Queries[0])
+	if err != nil {
+		logger.Debug("Failed to marshal query", "error", err)
+		return ""
+	}
+
+	return strings.ReplaceAll(strings.ReplaceAll(string(queryYAML), "\r\n", "\n"), "\n", ", ")
 }
 
 func calculateFingerprint(labels data.Labels) string {
@@ -646,6 +702,7 @@ func expandSummaryTemplate(
 	rule history_model.RuleMeta,
 	st state.StateTransition,
 	labels map[string]string,
+	query string,
 	logger log.Logger,
 ) string {
 	if summaryTemplate == "" {
@@ -663,7 +720,7 @@ func expandSummaryTemplate(
 			Value:       st.State.Values[models.GCThresholdInputQueryKey],
 			Threshold:   st.State.Values[models.GCThreshold1Key],
 			State:       st.Formatted(),
-			Query:       rule.Query,
+			Query:       query,
 			Creator:     st.Annotations[models.GCCreatorAnnotation],
 		}
 		parsed, err = template.ExpandJinja2Summary(summaryTemplate, summaryCtx)
