@@ -162,6 +162,24 @@ const (
 	// When set to "jinja2", uses the new context with monitor_name, severity, labels, value, threshold, state, query, creator.
 	// Otherwise, uses the legacy context with alert.labels.
 	GCTemplateLanguageAnnotation = "_gc_template_language"
+
+	// GCTemplateLanguageJinja2 is the value for GCTemplateLanguageAnnotation to use the Jinja2 template context.
+	GCTemplateLanguageJinja2 = "jinja2"
+
+	// GCSeverityLabel is the label key for alert severity.
+	GCSeverityLabel = "_gc_severity"
+
+	// GCCreatorAnnotation is the annotation key for the alert creator.
+	GCCreatorAnnotation = "_gc_creator"
+
+	// GCQueryLabel is the label key for the alert query.
+	GCQueryLabel = "_gc_query"
+
+	// GCThresholdInputQueryKey is the values map key for the threshold input query value.
+	GCThresholdInputQueryKey = "threshold_input_query"
+
+	// GCThreshold1Key is the values map key for the threshold_1 value.
+	GCThreshold1Key = "threshold_1"
 )
 
 const (

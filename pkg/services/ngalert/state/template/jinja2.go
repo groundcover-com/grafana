@@ -6,6 +6,13 @@ import (
 	"github.com/flosch/pongo2/v6"
 )
 
+func init() {
+	// Disable auto-escaping globally for pongo2.
+	// Auto-escaping is disabled because summary templates are used for plain text output,
+	// not HTML rendering, so we want raw string values without HTML entity encoding.
+	pongo2.SetAutoescape(false)
+}
+
 // SummaryContext holds all the context fields available for summary template expansion.
 type SummaryContext struct {
 	MonitorName string
@@ -51,17 +58,22 @@ func ExpandJinja2Summary(tmpl string, ctx SummaryContext) (string, error) {
 	return result, nil
 }
 
+// LegacySummaryContext holds the context fields available for legacy summary template expansion.
+type LegacySummaryContext struct {
+	Labels map[string]string
+}
+
 // ExpandLegacySummary expands a summary template using the legacy context format.
 // Supports {{ alert.labels.X }} syntax for variable interpolation.
 // This is the default when _gc_template_language annotation is not set to "jinja2".
-func ExpandLegacySummary(tmpl string, labels map[string]string) (string, error) {
+func ExpandLegacySummary(tmpl string, ctx LegacySummaryContext) (string, error) {
 	if !strings.Contains(tmpl, "{{") {
 		return tmpl, nil
 	}
 
 	pongoCtx := pongo2.Context{
 		"alert": map[string]interface{}{
-			"labels": labels,
+			"labels": ctx.Labels,
 		},
 	}
 

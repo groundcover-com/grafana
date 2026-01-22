@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"math"
 	"regexp"
 	"sort"
@@ -332,41 +333,19 @@ func StatesToStream(rule history_model.RuleMeta, states []state.StateTransition,
 			}
 		}
 
-		var parsedSummary string
-		if summaryTemplate := state.Annotations[models.GCIssueHeaderAnnotation]; summaryTemplate != "" {
-			labelMap := make(map[string]string, len(sanitizedLabels))
-			for k, v := range sanitizedLabels {
-				labelMap[k] = v
-			}
+		labelMap := make(map[string]string, len(sanitizedLabels))
+		maps.Copy(labelMap, sanitizedLabels)
 
-			var parsed string
-			var err error
+		parsedSummary := expandSummaryTemplate(
+			state.Annotations[models.GCIssueHeaderAnnotation],
+			state.Annotations[models.GCTemplateLanguageAnnotation],
+			rule,
+			state,
+			labelMap,
+			logger,
+		)
 
-			if state.Annotations[models.GCTemplateLanguageAnnotation] == "jinja2" {
-				summaryCtx := template.SummaryContext{
-					MonitorName: rule.Title,
-					Severity:    labelMap["_gc_severity"],
-					Labels:      labelMap,
-					Value:       state.State.Values["threshold_input_query"],
-					Threshold:   state.State.Values["threshold_1"],
-					State:       state.Formatted(),
-					Query:       rule.Query,
-					Creator:     state.Annotations["_gc_creator"],
-				}
-				parsed, err = template.ExpandJinja2Summary(summaryTemplate, summaryCtx)
-			} else {
-				parsed, err = template.ExpandLegacySummary(summaryTemplate, labelMap)
-			}
-
-			if err != nil {
-				logger.Warn("Failed to expand issue summary template", "error", err, "template", summaryTemplate)
-				parsedSummary = summaryTemplate
-			} else {
-				parsedSummary = parsed
-			}
-		}
-
-		sanitizedLabels["_gc_query"] = rule.Query
+		sanitizedLabels[models.GCQueryLabel] = rule.Query
 
 		entry := LokiEntry{
 			SchemaVersion:             1,
@@ -659,4 +638,43 @@ func cleanAnnotations(annotations map[string]string, annotationsToDelete map[str
 		}
 	}
 	return filtered
+}
+
+func expandSummaryTemplate(
+	summaryTemplate string,
+	templateLanguage string,
+	rule history_model.RuleMeta,
+	st state.StateTransition,
+	labels map[string]string,
+	logger log.Logger,
+) string {
+	if summaryTemplate == "" {
+		return ""
+	}
+
+	var parsed string
+	var err error
+
+	if templateLanguage == models.GCTemplateLanguageJinja2 {
+		summaryCtx := template.SummaryContext{
+			MonitorName: rule.Title,
+			Severity:    labels[models.GCSeverityLabel],
+			Labels:      labels,
+			Value:       st.State.Values[models.GCThresholdInputQueryKey],
+			Threshold:   st.State.Values[models.GCThreshold1Key],
+			State:       st.Formatted(),
+			Query:       rule.Query,
+			Creator:     st.Annotations[models.GCCreatorAnnotation],
+		}
+		parsed, err = template.ExpandJinja2Summary(summaryTemplate, summaryCtx)
+	} else {
+		parsed, err = template.ExpandLegacySummary(summaryTemplate, template.LegacySummaryContext{Labels: labels})
+	}
+
+	if err != nil {
+		logger.Warn("Failed to expand issue summary template", "error", err, "template", summaryTemplate)
+		return summaryTemplate
+	}
+
+	return parsed
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"strconv"
 
+	"github.com/grafana/grafana/pkg/expr"
 	"github.com/grafana/grafana/pkg/infra/log"
 	"github.com/grafana/grafana/pkg/services/ngalert/models"
 )
@@ -36,9 +37,11 @@ func NewRuleMeta(r *models.AlertRule, logger log.Logger) RuleMeta {
 		panelID = pid
 	}
 
+	// Find the first data source query (not an expression) to get the actual query
+	// that was run against the datasource (e.g., PromQL, ClickHouse SQL, etc.)
 	var query string
 	for i := range r.Data {
-		if r.Data[i].RefID == r.Condition {
+		if !expr.IsDataSource(r.Data[i].DatasourceUID) {
 			q, err := r.Data[i].GetQuery()
 			if err == nil {
 				query = q
