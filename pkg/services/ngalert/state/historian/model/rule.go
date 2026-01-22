@@ -37,6 +37,7 @@ func NewRuleMeta(r *models.AlertRule, logger log.Logger) RuleMeta {
 		panelID = pid
 	}
 
+	// groundcover
 	// Find the first data source query (not an expression) to get the actual query
 	// that was run against the datasource (e.g., PromQL, ClickHouse SQL, etc.)
 	var query string
