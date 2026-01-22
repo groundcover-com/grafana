@@ -46,8 +46,9 @@ func NewRuleMeta(r *models.AlertRule, logger log.Logger) RuleMeta {
 			q, err := r.Data[i].GetQuery()
 			if err == nil {
 				query = q
+				break
 			}
-			break
+			// On error, continue to try the next data source query
 		}
 	}
 
