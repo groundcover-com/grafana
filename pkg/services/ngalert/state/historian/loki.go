@@ -393,22 +393,40 @@ func StatesToStream(rule history_model.RuleMeta, states []state.StateTransition,
 	}
 }
 
-// gcMonitorQuery represents a query from the _gc_monitor_yaml annotation.
-type gcMonitorQuery struct {
-	DataType      string `yaml:"dataType" json:"data_type"`
-	Name          string `yaml:"-" json:"-"` // ignored from un/marshaling
-	Expression    string `yaml:"expression" json:"expression"`
-	InstantRollup string `yaml:"instantRollup" json:"instant_rollup"`
+// gcMonitorQueryOutput is the normalized output format for queries.
+type gcMonitorQueryOutput struct {
+	DataType      string `json:"data_type"`
+	Expression    string `json:"expression"`
+	InstantRollup string `json:"instant_rollup"`
+}
+
+// gcMonitorQueryRaw represents the raw query from the _gc_monitor_yaml annotation.
+// Supports both logs and metrics formats.
+type gcMonitorQueryRaw struct {
+	Expression string `yaml:"expression"`
+
+	// gcql format fields
+	DataType      string `yaml:"dataType"`
+	InstantRollup string `yaml:"instantRollup"`
+
+	// metrics format fields
+	DatasourceType string `yaml:"datasourceType"`
+	Rollup         struct {
+		Function string `yaml:"function"`
+		Time     string `yaml:"time"`
+	} `yaml:"rollup"`
 }
 
 type gcMonitorYaml struct {
 	Model struct {
-		Queries []gcMonitorQuery `yaml:"queries"`
+		Queries []gcMonitorQueryRaw `yaml:"queries"`
 	} `yaml:"model"`
 }
 
 // extractGCQuery parses the _gc_monitor_yaml annotation and extracts model.queries[0] as a JSON string.
-// The expected YAML structure is:
+// Supports two YAML formats:
+//
+// gcql format:
 //
 //	model:
 //	  queries:
@@ -416,6 +434,18 @@ type gcMonitorYaml struct {
 //	    name: threshold_input_query
 //	    expression: '* | stats by (cluster) count() count_all_result'
 //	    instantRollup: 5 minutes
+//
+// metrics format:
+//
+//	model:
+//	  queries:
+//	  - name: threshold_input_query
+//	    expression: avg(groundcover_node_rt_disk_space_used_percent{cluster="omerk-Cluster"}) by (cluster)
+//	    datasourceType: prometheus
+//	    queryType: instant
+//	    rollup:
+//	      function: avg
+//	      time: 5m
 func extractGCQuery(yamlContent string, logger log.Logger) string {
 	if yamlContent == "" {
 		return ""
@@ -434,7 +464,23 @@ func extractGCQuery(yamlContent string, logger log.Logger) string {
 		return ""
 	}
 
-	queryJSON, err := json.Marshal(parsed.Model.Queries[0])
+	raw := parsed.Model.Queries[0]
+
+	output := gcMonitorQueryOutput{
+		Expression: raw.Expression,
+	}
+
+	if raw.DataType != "" {
+		output.DataType = raw.DataType
+		output.InstantRollup = raw.InstantRollup
+	} else if raw.DatasourceType == "prometheus" {
+		output.DataType = "metrics"
+		if raw.Rollup.Function != "" && raw.Rollup.Time != "" {
+			output.InstantRollup = fmt.Sprintf("%s(%s)", raw.Rollup.Function, raw.Rollup.Time)
+		}
+	}
+
+	queryJSON, err := json.Marshal(output)
 	if err != nil {
 		logger.Debug("Failed to marshal query to JSON", "error", err)
 		return ""
