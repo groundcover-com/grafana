@@ -395,10 +395,10 @@ func StatesToStream(rule history_model.RuleMeta, states []state.StateTransition,
 
 // gcMonitorQuery represents a query from the _gc_monitor_yaml annotation.
 type gcMonitorQuery struct {
-	DataType      string `yaml:"dataType"`
-	Name          string `yaml:"-"` // ignored from yaml un/marshaling
-	Expression    string `yaml:"expression"`
-	InstantRollup string `yaml:"instantRollup"`
+	DataType      string `yaml:"dataType" json:"data_type"`
+	Name          string `yaml:"-" json:"-"` // ignored from un/marshaling
+	Expression    string `yaml:"expression" json:"expression"`
+	InstantRollup string `yaml:"instantRollup" json:"instant_rollup"`
 }
 
 type gcMonitorYaml struct {
@@ -407,7 +407,7 @@ type gcMonitorYaml struct {
 	} `yaml:"model"`
 }
 
-// extractGCQuery parses the _gc_monitor_yaml annotation and extracts model.queries[0] as a YAML string.
+// extractGCQuery parses the _gc_monitor_yaml annotation and extracts model.queries[0] as a JSON string.
 // The expected YAML structure is:
 //
 //	model:
@@ -421,7 +421,7 @@ func extractGCQuery(yamlContent string, logger log.Logger) string {
 		return ""
 	}
 
-	cleanYaml := html.UnescapeString(string(yamlContent))
+	cleanYaml := html.UnescapeString(yamlContent)
 
 	var parsed gcMonitorYaml
 	if err := yaml.Unmarshal([]byte(cleanYaml), &parsed); err != nil {
@@ -434,13 +434,13 @@ func extractGCQuery(yamlContent string, logger log.Logger) string {
 		return ""
 	}
 
-	queryYAML, err := yaml.Marshal(parsed.Model.Queries[0])
+	queryJSON, err := json.Marshal(parsed.Model.Queries[0])
 	if err != nil {
-		logger.Debug("Failed to marshal query", "error", err)
+		logger.Debug("Failed to marshal query to JSON", "error", err)
 		return ""
 	}
 
-	return strings.ReplaceAll(strings.ReplaceAll(string(queryYAML), "\r\n", "\n"), "\n", ", ")
+	return string(queryJSON)
 }
 
 func calculateFingerprint(labels data.Labels) string {
