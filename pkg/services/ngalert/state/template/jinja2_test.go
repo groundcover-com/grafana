@@ -193,15 +193,26 @@ func TestExpandJinja2Summary_AlertAlertname(t *testing.T) {
 	require.Equal(t, "Alert: CPU High Alert", result)
 }
 
+func TestExpandJinja2Summary_Fingerprint(t *testing.T) {
+	ctx := SummaryContext{
+		Fingerprint: "abc123def456",
+	}
+
+	result, err := ExpandJinja2Summary("Fingerprint: {{ fingerprint }}", ctx)
+
+	require.NoError(t, err)
+	require.Equal(t, "Fingerprint: abc123def456", result)
+}
+
 func TestExpandJinja2Summary_AlertFingerprint(t *testing.T) {
 	ctx := SummaryContext{
 		Fingerprint: "abc123def456",
 	}
 
-	result, err := ExpandJinja2Summary("Fingerprint: {{ alert.fingerprint }}", ctx)
+	result, err := ExpandJinja2Summary("Fingerprint: {{ alert.fingerprint }}({{ fingerprint }})", ctx)
 
 	require.NoError(t, err)
-	require.Equal(t, "Fingerprint: abc123def456", result)
+	require.Equal(t, "Fingerprint: abc123def456(abc123def456)", result)
 }
 
 func TestExpandJinja2Summary_AllFields(t *testing.T) {
@@ -220,9 +231,9 @@ func TestExpandJinja2Summary_AllFields(t *testing.T) {
 		Creator:     "ops-team",
 	}
 
-	tmpl := "[{{ severity }}] {{ monitor_name }}({{ alert.alertname }}): {{ labels.pod }}({{ alert.labels.pod }}) in {{ labels.namespace }}({{ alert.labels.namespace }}) - {{ state }} ({{ value }}/{{ threshold }}) query={{ query }} by={{ creator }} fingerprint={{ alert.fingerprint }}"
+	tmpl := "[{{ severity }}] {{ monitor_name }}({{ alert.alertname }}): {{ labels.pod }}({{ alert.labels.pod }}) in {{ labels.namespace }}({{ alert.labels.namespace }}) - {{ state }} ({{ value }}/{{ threshold }}) query={{ query }} by={{ creator }} fingerprint={{ fingerprint }}({{ alert.fingerprint }})"
 	result, err := ExpandJinja2Summary(tmpl, ctx)
 
 	require.NoError(t, err)
-	require.Equal(t, "[warning] High CPU(High CPU): web-1(web-1) in prod(prod) - Alerting (85.500000/80.000000) query=cpu > 80 by=ops-team fingerprint=abc123", result)
+	require.Equal(t, "[warning] High CPU(High CPU): web-1(web-1) in prod(prod) - Alerting (85.500000/80.000000) query=cpu > 80 by=ops-team fingerprint=abc123(abc123)", result)
 }

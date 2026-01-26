@@ -27,7 +27,7 @@ type SummaryContext struct {
 
 // ExpandJinja2Summary expands a Jinja2-style summary template with the given context.
 // Supports variable interpolation using {{ variable }} syntax.
-// Available variables: monitor_name, severity, labels, value, threshold, state, query, creator
+// Available variables: monitor_name, severity, labels, fingerprint, value, threshold, state, query, creator
 // To support legacy monitors, we also inject all the labels as alert.labels, monitor_name as alert.alertname and fingerprint as alert.fingerprint.
 func ExpandJinja2Summary(tmpl string, ctx SummaryContext) (string, error) {
 	if !strings.Contains(tmpl, "{{") {
@@ -43,6 +43,7 @@ func ExpandJinja2Summary(tmpl string, ctx SummaryContext) (string, error) {
 		"state":        ctx.State,
 		"query":        ctx.Query,
 		"creator":      ctx.Creator,
+		"fingerprint":  ctx.Fingerprint,
 		// Legacy support for alert. prefix (Keep workflows)
 		"alert": map[string]any{
 			"labels":      ctx.Labels,
