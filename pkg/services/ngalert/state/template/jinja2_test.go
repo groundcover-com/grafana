@@ -258,6 +258,119 @@ func TestExpandJinja2Summary_LabelsString(t *testing.T) {
 	require.Equal(t, "Labels: namespace=prod, pod=web-1, service=api", result)
 }
 
+func TestExpandJinja2Summary_DotNotationLabels(t *testing.T) {
+	ctx := SummaryContext{
+		Labels: Labels{
+			"http.route": "/api/v1/users",
+		},
+	}
+
+	result, err := ExpandJinja2Summary("Route: {{ labels.http.route }}", ctx)
+
+	require.NoError(t, err)
+	require.Equal(t, "Route: /api/v1/users", result)
+}
+
+func TestExpandJinja2Summary_DeepDotNotation(t *testing.T) {
+	ctx := SummaryContext{
+		Labels: Labels{
+			"user.properties.tenantUUID": "abc-123",
+		},
+	}
+
+	result, err := ExpandJinja2Summary("Tenant: {{ labels.user.properties.tenantUUID }}", ctx)
+
+	require.NoError(t, err)
+	require.Equal(t, "Tenant: abc-123", result)
+}
+
+func TestExpandJinja2Summary_BracketNotationPreserved(t *testing.T) {
+	ctx := SummaryContext{
+		Labels: Labels{
+			"http.route": "/api/v1/users",
+		},
+	}
+
+	result, err := ExpandJinja2Summary(`Route: {{ labels["http.route"] }}`, ctx)
+
+	require.NoError(t, err)
+	require.Equal(t, "Route: /api/v1/users", result)
+}
+
+func TestExpandJinja2Summary_DotNotationConflict(t *testing.T) {
+	ctx := SummaryContext{
+		Labels: Labels{
+			"github":          "myorg",
+			"github.workflow": "CI",
+		},
+	}
+
+	result, err := ExpandJinja2Summary("Org: {{ labels.github }}", ctx)
+
+	require.NoError(t, err)
+	require.Equal(t, "Org: myorg", result)
+}
+
+func TestExpandJinja2Summary_MixedSimpleAndDottedKeys(t *testing.T) {
+	ctx := SummaryContext{
+		Labels: Labels{
+			"env":        "prod",
+			"http.route": "/api",
+		},
+	}
+
+	result, err := ExpandJinja2Summary("{{ labels.env }} {{ labels.http.route }}", ctx)
+
+	require.NoError(t, err)
+	require.Equal(t, "prod /api", result)
+}
+
+func TestBuildNestedLabels(t *testing.T) {
+	t.Run("nil for empty labels", func(t *testing.T) {
+		result := BuildNestedLabels(Labels{})
+		require.Nil(t, result)
+	})
+
+	t.Run("simple keys preserved", func(t *testing.T) {
+		result := BuildNestedLabels(Labels{"env": "prod", "pod": "web-1"})
+		require.Equal(t, "prod", result["env"])
+		require.Equal(t, "web-1", result["pod"])
+	})
+
+	t.Run("dotted key creates flat and nested entries", func(t *testing.T) {
+		result := BuildNestedLabels(Labels{"http.route": "/api"})
+		require.Equal(t, "/api", result["http.route"])
+		httpMap, ok := result["http"].(map[string]interface{})
+		require.True(t, ok)
+		require.Equal(t, "/api", httpMap["route"])
+	})
+
+	t.Run("deep nesting", func(t *testing.T) {
+		result := BuildNestedLabels(Labels{"a.b.c": "val"})
+		require.Equal(t, "val", result["a.b.c"])
+		aMap := result["a"].(map[string]interface{})
+		bMap := aMap["b"].(map[string]interface{})
+		require.Equal(t, "val", bMap["c"])
+	})
+
+	t.Run("conflict preserves flat leaf", func(t *testing.T) {
+		result := BuildNestedLabels(Labels{
+			"github":          "myorg",
+			"github.workflow": "CI",
+		})
+		require.Equal(t, "myorg", result["github"])
+		require.Equal(t, "CI", result["github.workflow"])
+	})
+
+	t.Run("String skips nested map entries", func(t *testing.T) {
+		result := BuildNestedLabels(Labels{"env": "prod", "http.route": "/api"})
+		s := result.String()
+		require.Contains(t, s, "env=prod")
+		require.Contains(t, s, "http.route=/api")
+		require.NotContains(t, s, "http=map")
+	})
+}
+
 func TestExpandJinja2Summary_LabelsForLoop(t *testing.T) {
 	ctx := SummaryContext{
 		Labels: Labels{
