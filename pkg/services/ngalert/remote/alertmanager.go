@@ -19,7 +19,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 
 	alertingClusterPB "github.com/grafana/alerting/cluster/clusterpb"
-	alertingModels "github.com/grafana/alerting/models"
 	alertingNotify "github.com/grafana/alerting/notify"
 
 	"gopkg.in/yaml.v3"
@@ -486,18 +485,25 @@ func (am *Alertmanager) GetAlertGroups(ctx context.Context, active, silenced, in
 
 func (am *Alertmanager) PutAlerts(ctx context.Context, alerts apimodels.PostableAlerts) error {
 	for _, a := range alerts.PostableAlerts {
-		for k, v := range a.Labels {
-			// The Grafana Alertmanager skips empty and namespace UID labels.
-			// To get the same alert fingerprint we need to remove these labels too.
-			// https://github.com/grafana/alerting/blob/2dda1c67ec02625ac9fc8607157b3d5825d47919/notify/grafana_alertmanager.go#L722-L724
-			if len(v) == 0 || k == alertingModels.NamespaceUIDLabel {
-				delete(a.Labels, k)
-			}
-		}
+		SanitizeWebhookLabels(a.Labels)
 	}
 	am.log.Debug("Sending alerts to a remote alertmanager", "url", am.url, "alerts", len(alerts.PostableAlerts))
 	am.sender.SendAlerts(alerts)
 	return nil
+}
+
+// SanitizeWebhookLabels transforms alert labels to match the state history
+// fingerprint: adds monitor_name from alertname, removes private labels
+// (__*) and empty values.
+func SanitizeWebhookLabels(labels map[string]string) {
+	if alertname, ok := labels["alertname"]; ok {
+		labels["monitor_name"] = alertname
+	}
+	for k, v := range labels {
+		if len(v) == 0 || strings.HasPrefix(k, "__") || strings.HasSuffix(k, "__") {
+			delete(labels, k)
+		}
+	}
 }
 
 // GetStatus retrieves the remote Alertmanager configuration.
