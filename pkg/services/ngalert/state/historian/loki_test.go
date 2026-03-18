@@ -208,7 +208,7 @@ func TestRemoteLokiBackend(t *testing.T) {
 			require.Equal(t, exp, entry.Fingerprint)
 		})
 
-		t.Run("state history fingerprint matches webhook fingerprint", func(t *testing.T) {
+		t.Run("state history fingerprint matches webhook _gc_fingerprint annotation", func(t *testing.T) {
 			rule := createTestRule()
 			l := log.NewNopLogger()
 			originalLabels := data.Labels{
@@ -230,11 +230,10 @@ func TestRemoteLokiBackend(t *testing.T) {
 			for k, v := range originalLabels {
 				webhookLabels[k] = v
 			}
-			remote.SanitizeWebhookLabels(webhookLabels)
-			webhookFingerprint := labelFingerprint(data.Labels(webhookLabels))
+			gcFingerprint := remote.ComputeGCFingerprint(webhookLabels)
 
-			require.Equal(t, webhookFingerprint, stateFingerprint,
-				"webhook and state history fingerprints must match for the same alert")
+			require.Equal(t, gcFingerprint, stateFingerprint,
+				"_gc_fingerprint sent via webhook must match the state history fingerprint")
 		})
 
 		t.Run("sets is_muted field when muteChecker is provided", func(t *testing.T) {
