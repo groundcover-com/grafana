@@ -59,15 +59,32 @@ func BuildNestedLabels(labels Labels) NestedLabels {
 	// Second pass: build nested structure for dotted keys (enables dot notation).
 	// If an intermediate segment conflicts with an existing flat leaf value,
 	// we skip building the nested path for that key to preserve backward compatibility.
-	for k, v := range labels {
+	//
+	// Keys are sorted by segment count (fewer segments first) to ensure deterministic
+	// behavior when keys overlap (e.g., "a.b" and "a.b.c"). Shorter keys are processed
+	// first so they claim their leaf position, and deeper keys correctly detect the conflict.
+	type dottedKey struct {
+		key   string
+		parts []string
+	}
+	var dottedKeys []dottedKey
+	for k := range labels {
 		parts := strings.Split(k, ".")
-		if len(parts) == 1 {
-			continue // No dots — already handled by first pass.
+		if len(parts) > 1 {
+			dottedKeys = append(dottedKeys, dottedKey{key: k, parts: parts})
 		}
+	}
+	sort.Slice(dottedKeys, func(i, j int) bool {
+		if len(dottedKeys[i].parts) != len(dottedKeys[j].parts) {
+			return len(dottedKeys[i].parts) < len(dottedKeys[j].parts)
+		}
+		return dottedKeys[i].key < dottedKeys[j].key
+	})
 
+	for _, dk := range dottedKeys {
 		current := map[string]interface{}(result)
 		conflict := false
-		for _, part := range parts[:len(parts)-1] {
+		for _, part := range dk.parts[:len(dk.parts)-1] {
 			if existing, ok := current[part]; ok {
 				if nestedMap, ok := existing.(map[string]interface{}); ok {
 					current = nestedMap
@@ -84,7 +101,7 @@ func BuildNestedLabels(labels Labels) NestedLabels {
 			}
 		}
 		if !conflict {
-			current[parts[len(parts)-1]] = v
+			current[dk.parts[len(dk.parts)-1]] = labels[dk.key]
 		}
 	}
 
@@ -119,10 +136,12 @@ func ExpandJinja2Summary(tmpl string, ctx SummaryContext) (string, error) {
 		return tmpl, nil
 	}
 
+	nestedLabels := BuildNestedLabels(ctx.Labels)
+
 	pongoCtx := pongo2.Context{
 		"monitor_name": ctx.MonitorName,
 		"severity":     ctx.Severity,
-		"labels":       BuildNestedLabels(ctx.Labels),
+		"labels":       nestedLabels,
 		"value":        ctx.Value,
 		"threshold":    ctx.Threshold,
 		"state":        ctx.State,
@@ -131,7 +150,7 @@ func ExpandJinja2Summary(tmpl string, ctx SummaryContext) (string, error) {
 		"fingerprint":  ctx.Fingerprint,
 		// Legacy support for alert. prefix (Keep workflows)
 		"alert": map[string]any{
-			"labels":      BuildNestedLabels(ctx.Labels),
+			"labels":      nestedLabels,
 			"fingerprint": ctx.Fingerprint,
 			"alertname":   ctx.MonitorName,
 		},

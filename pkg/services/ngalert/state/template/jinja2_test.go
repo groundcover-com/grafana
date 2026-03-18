@@ -305,10 +305,19 @@ func TestExpandJinja2Summary_DotNotationConflict(t *testing.T) {
 		},
 	}
 
+	// Flat leaf value wins — dot notation resolves to the simple label.
 	result, err := ExpandJinja2Summary("Org: {{ labels.github }}", ctx)
-
 	require.NoError(t, err)
 	require.Equal(t, "Org: myorg", result)
+
+	// Dot notation for the conflicted key errors (pongo2 can't traverse a string).
+	_, err = ExpandJinja2Summary("Workflow: {{ labels.github.workflow }}", ctx)
+	require.Error(t, err)
+
+	// Bracket notation still works as the fallback for conflicted dotted keys.
+	result, err = ExpandJinja2Summary(`Workflow: {{ labels["github.workflow"] }}`, ctx)
+	require.NoError(t, err)
+	require.Equal(t, "Workflow: CI", result)
 }
 
 func TestExpandJinja2Summary_MixedSimpleAndDottedKeys(t *testing.T) {
@@ -362,6 +371,22 @@ func TestBuildNestedLabels(t *testing.T) {
 		require.Equal(t, "CI", result["github.workflow"])
 	})
 
+	t.Run("overlapping dotted keys are deterministic", func(t *testing.T) {
+		// "a.b" (2 segments) is always processed before "a.b.c" (3 segments),
+		// so "a.b" claims the leaf and "a.b.c" nesting is skipped.
+		for i := 0; i < 100; i++ {
+			result := BuildNestedLabels(Labels{
+				"a.b":   "1",
+				"a.b.c": "2",
+			})
+			aMap, ok := result["a"].(map[string]interface{})
+			require.True(t, ok, "iteration %d: result[\"a\"] should be a map", i)
+			require.Equal(t, "1", aMap["b"], "iteration %d: shorter key a.b must always win", i)
+			require.Equal(t, "1", result["a.b"])
+			require.Equal(t, "2", result["a.b.c"])
+		}
+	})
+
 	t.Run("String skips nested map entries", func(t *testing.T) {
 		result := BuildNestedLabels(Labels{"env": "prod", "http.route": "/api"})
 		s := result.String()
@@ -392,4 +417,28 @@ func TestExpandJinja2Summary_LabelsForLoop(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, result, "namespace=prod")
 	require.Contains(t, result, "pod=web-1")
+}
+
+func TestExpandJinja2Summary_LabelsForLoopWithDottedKeys(t *testing.T) {
+	ctx := SummaryContext{
+		Labels: Labels{
+			"env":        "prod",
+			"http.route": "/api",
+		},
+	}
+
+	// {{ labels }} stringification filters out synthetic nested map entries.
+	result, err := ExpandJinja2Summary("{{ labels }}", ctx)
+	require.NoError(t, err)
+	require.Equal(t, "env=prod, http.route=/api", result)
+
+	// For-loop iteration sees synthetic keys (e.g., "http") alongside original flat keys.
+	// This is a known tradeoff: dot notation (labels.http.route) requires the nested
+	// structure to live in the same map. Use {{ labels }} for clean output.
+	tmpl := `{% for key, val in labels %}{{ key }},{% endfor %}`
+	result, err = ExpandJinja2Summary(tmpl, ctx)
+	require.NoError(t, err)
+	require.Contains(t, result, "env,")
+	require.Contains(t, result, "http.route,")
+	require.Contains(t, result, "http,")
 }
