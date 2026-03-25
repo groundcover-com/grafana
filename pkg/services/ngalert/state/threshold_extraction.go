@@ -10,8 +10,8 @@ import (
 const gcConfiguredThresholdKey = "_gc_configured_threshold"
 
 // extractConfiguredThreshold parses the alert rule's condition query to
-// extract the configured threshold value. Returns (value, true) if found.
-func extractConfiguredThreshold(alertRule *models.AlertRule) (float64, bool) {
+// extract the configured threshold value. Returns nil if not found.
+func extractConfiguredThreshold(alertRule *models.AlertRule) *float64 {
 	// Find the condition query by matching alertRule.Condition RefID
 	var conditionQuery *models.AlertQuery
 	for i := range alertRule.Data {
@@ -21,11 +21,11 @@ func extractConfiguredThreshold(alertRule *models.AlertRule) (float64, bool) {
 		}
 	}
 	if conditionQuery == nil {
-		return 0, false
+		return nil
 	}
 
 	if !expr.IsDataSource(conditionQuery.DatasourceUID) {
-		return 0, false
+		return nil
 	}
 
 	// Single unmarshal: embed type check and threshold config together.
@@ -34,14 +34,15 @@ func extractConfiguredThreshold(alertRule *models.AlertRule) (float64, bool) {
 		expr.ThresholdCommandConfig
 	}
 	if err := json.Unmarshal(conditionQuery.Model, &config); err != nil {
-		return 0, false
+		return nil
 	}
 	if config.Type != string(expr.QueryTypeThreshold) {
-		return 0, false
+		return nil
 	}
 	if len(config.Conditions) == 0 || len(config.Conditions[0].Evaluator.Params) == 0 {
-		return 0, false
+		return nil
 	}
 
-	return config.Conditions[0].Evaluator.Params[0], true
+	v := config.Conditions[0].Evaluator.Params[0]
+	return &v
 }

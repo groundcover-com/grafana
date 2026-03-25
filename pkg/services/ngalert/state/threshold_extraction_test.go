@@ -9,6 +9,7 @@ import (
 
 	"github.com/grafana/grafana/pkg/expr"
 	ngmodels "github.com/grafana/grafana/pkg/services/ngalert/models"
+	"github.com/grafana/grafana/pkg/util"
 )
 
 func makeThresholdModel(t *testing.T, evalType string, params []float64) json.RawMessage {
@@ -32,10 +33,9 @@ func makeThresholdModel(t *testing.T, evalType string, params []float64) json.Ra
 
 func TestExtractConfiguredThreshold(t *testing.T) {
 	tests := []struct {
-		name      string
-		rule      *ngmodels.AlertRule
-		wantVal   float64
-		wantFound bool
+		name string
+		rule *ngmodels.AlertRule
+		want *float64
 	}{
 		{
 			name: "gt threshold",
@@ -46,8 +46,7 @@ func TestExtractConfiguredThreshold(t *testing.T) {
 					{RefID: "B", DatasourceUID: expr.DatasourceUID, Model: makeThresholdModel(t, "gt", []float64{90})},
 				},
 			},
-			wantVal:   90,
-			wantFound: true,
+			want: util.Pointer[float64](90),
 		},
 		{
 			name: "lt threshold",
@@ -58,8 +57,7 @@ func TestExtractConfiguredThreshold(t *testing.T) {
 					{RefID: "B", DatasourceUID: expr.DatasourceUID, Model: makeThresholdModel(t, "lt", []float64{50})},
 				},
 			},
-			wantVal:   50,
-			wantFound: true,
+			want: util.Pointer[float64](50),
 		},
 		{
 			name: "within_range uses first param",
@@ -70,8 +68,7 @@ func TestExtractConfiguredThreshold(t *testing.T) {
 					{RefID: "B", DatasourceUID: expr.DatasourceUID, Model: makeThresholdModel(t, "within_range", []float64{10, 100})},
 				},
 			},
-			wantVal:   10,
-			wantFound: true,
+			want: util.Pointer[float64](10),
 		},
 		{
 			name: "outside_range uses first param",
@@ -82,8 +79,7 @@ func TestExtractConfiguredThreshold(t *testing.T) {
 					{RefID: "B", DatasourceUID: expr.DatasourceUID, Model: makeThresholdModel(t, "outside_range", []float64{10, 100})},
 				},
 			},
-			wantVal:   10,
-			wantFound: true,
+			want: util.Pointer[float64](10),
 		},
 		{
 			name: "old datasource UID",
@@ -94,8 +90,7 @@ func TestExtractConfiguredThreshold(t *testing.T) {
 					{RefID: "B", DatasourceUID: expr.OldDatasourceUID, Model: makeThresholdModel(t, "gt", []float64{42})},
 				},
 			},
-			wantVal:   42,
-			wantFound: true,
+			want: util.Pointer[float64](42),
 		},
 		{
 			name: "condition RefID not found",
@@ -106,8 +101,7 @@ func TestExtractConfiguredThreshold(t *testing.T) {
 					{RefID: "B", DatasourceUID: expr.DatasourceUID, Model: makeThresholdModel(t, "gt", []float64{90})},
 				},
 			},
-			wantVal:   0,
-			wantFound: false,
+			want: nil,
 		},
 		{
 			name: "condition is not expression datasource",
@@ -117,8 +111,7 @@ func TestExtractConfiguredThreshold(t *testing.T) {
 					{RefID: "A", DatasourceUID: "prometheus", Model: makeThresholdModel(t, "gt", []float64{90})},
 				},
 			},
-			wantVal:   0,
-			wantFound: false,
+			want: nil,
 		},
 		{
 			name: "condition is math type not threshold",
@@ -136,8 +129,7 @@ func TestExtractConfiguredThreshold(t *testing.T) {
 					}()},
 				},
 			},
-			wantVal:   0,
-			wantFound: false,
+			want: nil,
 		},
 		{
 			name: "empty conditions array",
@@ -156,8 +148,7 @@ func TestExtractConfiguredThreshold(t *testing.T) {
 					}()},
 				},
 			},
-			wantVal:   0,
-			wantFound: false,
+			want: nil,
 		},
 		{
 			name: "empty params",
@@ -168,8 +159,7 @@ func TestExtractConfiguredThreshold(t *testing.T) {
 					{RefID: "B", DatasourceUID: expr.DatasourceUID, Model: makeThresholdModel(t, "gt", []float64{})},
 				},
 			},
-			wantVal:   0,
-			wantFound: false,
+			want: nil,
 		},
 		{
 			name: "malformed model JSON",
@@ -179,16 +169,14 @@ func TestExtractConfiguredThreshold(t *testing.T) {
 					{RefID: "B", DatasourceUID: expr.DatasourceUID, Model: json.RawMessage(`{invalid json}`)},
 				},
 			},
-			wantVal:   0,
-			wantFound: false,
+			want: nil,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			val, found := extractConfiguredThreshold(tt.rule)
-			assert.Equal(t, tt.wantFound, found)
-			assert.Equal(t, tt.wantVal, val)
+			got := extractConfiguredThreshold(tt.rule)
+			assert.Equal(t, tt.want, got)
 		})
 	}
 }
