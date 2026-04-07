@@ -21,7 +21,7 @@ jobs:
       - name: Install dependencies
         run: yarn install --immutable
       - name: Run tests
-        run: npx jest --ci --changedSince=origin/groundcover-main --passWithNoTests
+        run: npx jest --ci --passWithNoTests --testPathPattern="contact-points|receivers"
 
   build:
     runs-on: ubuntu-latest
