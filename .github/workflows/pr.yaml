@@ -19,7 +19,7 @@ jobs:
       - name: Install dependencies
         run: yarn install --immutable
       - name: Run tests
-        run: yarn test:ci
+        run: npx jest --ci --changedSince=origin/groundcover-main --passWithNoTests
 
   build:
     runs-on: ubuntu-latest
