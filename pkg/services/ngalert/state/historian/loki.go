@@ -311,14 +311,24 @@ func StatesToStream(rule history_model.RuleMeta, states []state.StateTransition,
 		state.Labels[MonitorNameLabel] = rule.Title
 		sanitizedLabels := removePrivateLabels(state.Labels)
 		var errMsg string
-		if state.State.State == eval.Error {
-			errMsg = state.Error.Error()
+		switch {
+		case state.State.State == eval.Error:
+			// state.Error is sometimes nil even in an error state; fall back to the annotation.
+			if state.Error != nil {
+				errMsg = state.Error.Error()
+			} else {
+				errMsg = state.Annotations[errAnnotationName]
+			}
 			state.State.Values = map[string]float64{}
-			// sometimes eval.Error is nil but we get an annotation
-		} else if errAnnotationValue := state.Annotations[errAnnotationName]; errAnnotationValue != "" {
-			errMsg = errAnnotationValue
+		case state.Annotations[errAnnotationName] != "" &&
+			(state.State.State != eval.Normal || state.State.StateReason == eval.Error.String()):
+			// The state is not Error but the current evaluation still errored, with the detail only in
+			// the annotation. This covers ExecErrState=Alerting (Alerting/Pending) and ExecErrState=OK,
+			// where the error is mapped to Normal but StateReason is set to Error for this evaluation.
+			// A genuinely clean Normal state (empty StateReason) must not surface a stale error.
+			errMsg = state.Annotations[errAnnotationName]
 			state.State.Values = map[string]float64{}
-		} else if state.State.State == eval.NoData || state.State.StateReason == eval.NoData.String() {
+		case state.State.State == eval.NoData || state.State.StateReason == eval.NoData.String():
 			state.State.Values = map[string]float64{}
 		}
 
