@@ -321,11 +321,13 @@ func StatesToStream(rule history_model.RuleMeta, states []state.StateTransition,
 			}
 			state.State.Values = map[string]float64{}
 		case state.Annotations[errAnnotationName] != "" &&
-			(state.State.State != eval.Normal || state.State.StateReason == eval.Error.String()):
-			// The state is not Error but the current evaluation still errored, with the detail only in
-			// the annotation. This covers ExecErrState=Alerting (Alerting/Pending) and ExecErrState=OK,
-			// where the error is mapped to Normal but StateReason is set to Error for this evaluation.
-			// A genuinely clean Normal state (empty StateReason) must not surface a stale error.
+			state.State.LatestResult != nil &&
+			state.State.LatestResult.EvaluationState == eval.Error:
+			// The final state is not Error, but the current evaluation errored and was mapped to another
+			// state (e.g. ExecErrState=OK -> Normal, ExecErrState=Alerting -> Alerting/Pending). The error
+			// detail only lives in the annotation. Gating on the current evaluation result, rather than the
+			// mapped state, records the error for the evaluation that produced it while avoiding stale
+			// errors that drifted onto unrelated states (e.g. Normal or NoData).
 			errMsg = state.Annotations[errAnnotationName]
 			state.State.Values = map[string]float64{}
 		case state.State.State == eval.NoData || state.State.StateReason == eval.NoData.String():
