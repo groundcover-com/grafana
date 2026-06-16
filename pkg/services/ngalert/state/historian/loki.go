@@ -311,14 +311,26 @@ func StatesToStream(rule history_model.RuleMeta, states []state.StateTransition,
 		state.Labels[MonitorNameLabel] = rule.Title
 		sanitizedLabels := removePrivateLabels(state.Labels)
 		var errMsg string
-		if state.State.State == eval.Error {
-			errMsg = state.Error.Error()
+		switch {
+		case state.State.State == eval.Error:
+			// state.Error is sometimes nil even in an error state; fall back to the annotation.
+			if state.Error != nil {
+				errMsg = state.Error.Error()
+			} else {
+				errMsg = state.Annotations[errAnnotationName]
+			}
 			state.State.Values = map[string]float64{}
-			// sometimes eval.Error is nil but we get an annotation
-		} else if errAnnotationValue := state.Annotations[errAnnotationName]; errAnnotationValue != "" {
-			errMsg = errAnnotationValue
+		case state.Annotations[errAnnotationName] != "" &&
+			state.State.LatestResult != nil &&
+			state.State.LatestResult.EvaluationState == eval.Error:
+			// The final state is not Error, but the current evaluation errored and was mapped to another
+			// state (e.g. ExecErrState=OK -> Normal, ExecErrState=Alerting -> Alerting/Pending). The error
+			// detail only lives in the annotation. Gating on the current evaluation result, rather than the
+			// mapped state, records the error for the evaluation that produced it while avoiding stale
+			// errors that drifted onto unrelated states (e.g. Normal or NoData).
+			errMsg = state.Annotations[errAnnotationName]
 			state.State.Values = map[string]float64{}
-		} else if state.State.State == eval.NoData || state.State.StateReason == eval.NoData.String() {
+		case state.State.State == eval.NoData || state.State.StateReason == eval.NoData.String():
 			state.State.Values = map[string]float64{}
 		}
 
