@@ -1,6 +1,7 @@
 package template
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -297,7 +298,7 @@ func TestExpandJinja2Summary_BracketNotationPreserved(t *testing.T) {
 	require.Equal(t, "Route: /api/v1/users", result)
 }
 
-func TestExpandJinja2Summary_DotNotationConflict(t *testing.T) {
+func TestExpandJinja2Summary_DotNotationCollisionResolves(t *testing.T) {
 	ctx := SummaryContext{
 		Labels: Labels{
 			"github":          "myorg",
@@ -305,19 +306,48 @@ func TestExpandJinja2Summary_DotNotationConflict(t *testing.T) {
 		},
 	}
 
-	// Flat leaf value wins — dot notation resolves to the simple label.
+	// Direct access to the colliding label renders its own scalar.
 	result, err := ExpandJinja2Summary("Org: {{ labels.github }}", ctx)
 	require.NoError(t, err)
 	require.Equal(t, "Org: myorg", result)
 
-	// Dot notation for the conflicted key errors (pongo2 can't traverse a string).
-	_, err = ExpandJinja2Summary("Workflow: {{ labels.github.workflow }}", ctx)
-	require.Error(t, err)
+	// Dot notation into the same name now resolves instead of erroring.
+	result, err = ExpandJinja2Summary("Workflow: {{ labels.github.workflow }}", ctx)
+	require.NoError(t, err)
+	require.Equal(t, "Workflow: CI", result)
 
-	// Bracket notation still works as the fallback for conflicted dotted keys.
+	// Bracket notation keeps working too.
 	result, err = ExpandJinja2Summary(`Workflow: {{ labels["github.workflow"] }}`, ctx)
 	require.NoError(t, err)
 	require.Equal(t, "Workflow: CI", result)
+}
+
+func TestExpandJinja2Summary_UnquotedBracketDoesNotPanic(t *testing.T) {
+	ctx := SummaryContext{Labels: Labels{"errType": "Timeout"}}
+
+	// Unquoted bracket access panics inside pongo2; it must surface as an error,
+	// not crash the caller.
+	_, err := ExpandJinja2Summary("{{ labels[errType] }}", ctx)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "panicked")
+	require.Contains(t, err.Error(), "quote the key")
+}
+
+func TestExpandJinja2Summary_SandboxBlocksFileTags(t *testing.T) {
+	ctx := SummaryContext{Labels: Labels{"env": "prod"}}
+
+	for _, tmpl := range []string{
+		`{{ x }}{% include "/etc/passwd" %}`,
+		`{{ x }}{% ssi "/etc/passwd" %}`,
+		`{% extends "/etc/passwd" %}{{ x }}`,
+	} {
+		_, err := ExpandJinja2Summary(tmpl, ctx)
+		require.Error(t, err, "file-reading tag must be rejected: %s", tmpl)
+	}
+
+	// Oversized templates are rejected.
+	_, err := ExpandJinja2Summary("{{ "+strings.Repeat("x", maxTemplateSize)+" }}", ctx)
+	require.Error(t, err)
 }
 
 func TestExpandJinja2Summary_MixedSimpleAndDottedKeys(t *testing.T) {
@@ -349,7 +379,7 @@ func TestBuildNestedLabels(t *testing.T) {
 	t.Run("dotted key creates flat and nested entries", func(t *testing.T) {
 		result := BuildNestedLabels(Labels{"http.route": "/api"})
 		require.Equal(t, "/api", result["http.route"])
-		httpMap, ok := result["http"].(map[string]interface{})
+		httpMap, ok := result["http"].(labelMap)
 		require.True(t, ok)
 		require.Equal(t, "/api", httpMap["route"])
 	})
@@ -357,31 +387,41 @@ func TestBuildNestedLabels(t *testing.T) {
 	t.Run("deep nesting", func(t *testing.T) {
 		result := BuildNestedLabels(Labels{"a.b.c": "val"})
 		require.Equal(t, "val", result["a.b.c"])
-		aMap := result["a"].(map[string]interface{})
-		bMap := aMap["b"].(map[string]interface{})
+		aMap := result["a"].(labelMap)
+		bMap := aMap["b"].(labelMap)
 		require.Equal(t, "val", bMap["c"])
 	})
 
-	t.Run("conflict preserves flat leaf", func(t *testing.T) {
+	t.Run("collision keeps both scalar and child", func(t *testing.T) {
 		result := BuildNestedLabels(Labels{
 			"github":          "myorg",
 			"github.workflow": "CI",
 		})
-		require.Equal(t, "myorg", result["github"])
 		require.Equal(t, "CI", result["github.workflow"])
+		node, ok := result["github"].(labelMap)
+		require.True(t, ok, "'github' should be a node carrying scalar + child")
+		raw, hasRaw := node.raw()
+		require.True(t, hasRaw)
+		require.Equal(t, "myorg", raw)
+		require.Equal(t, "CI", node["workflow"])
 	})
 
-	t.Run("overlapping dotted keys are deterministic", func(t *testing.T) {
-		// "a.b" (2 segments) is always processed before "a.b.c" (3 segments),
-		// so "a.b" claims the leaf and "a.b.c" nesting is skipped.
+	t.Run("overlapping dotted keys are deterministic and both resolve", func(t *testing.T) {
+		// "a.b" (2 segments) settles before "a.b.c" (3 segments); the deeper key
+		// promotes "a.b" into a node so both a.b and a.b.c resolve, deterministically.
 		for i := 0; i < 100; i++ {
 			result := BuildNestedLabels(Labels{
 				"a.b":   "1",
 				"a.b.c": "2",
 			})
-			aMap, ok := result["a"].(map[string]interface{})
-			require.True(t, ok, "iteration %d: result[\"a\"] should be a map", i)
-			require.Equal(t, "1", aMap["b"], "iteration %d: shorter key a.b must always win", i)
+			a, ok := result["a"].(labelMap)
+			require.True(t, ok, "iteration %d: result[\"a\"] should be a labelMap", i)
+			ab, ok := a["b"].(labelMap)
+			require.True(t, ok, "iteration %d: a.b should be a node with scalar + child", i)
+			raw, hasRaw := ab.raw()
+			require.True(t, hasRaw, "iteration %d: a.b must keep its scalar", i)
+			require.Equal(t, "1", raw, "iteration %d", i)
+			require.Equal(t, "2", ab["c"], "iteration %d", i)
 			require.Equal(t, "1", result["a.b"])
 			require.Equal(t, "2", result["a.b.c"])
 		}
