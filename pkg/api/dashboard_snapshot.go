@@ -77,7 +77,7 @@ func (hs *HTTPServer) CreateDashboardSnapshot(c *contextmodel.ReqContext) {
 
 	// Do not check permissions when the instance snapshot public mode is enabled
 	if !hs.Cfg.SnapshotPublicMode {
-		evaluator := ac.EvalPermission(dashboards.ActionDashboardsWrite, dashboards.ScopeDashboardsProvider.GetResourceScopeUID(cmd.Dashboard.GetNestedString("uid")))
+		evaluator := ac.EvalAll(ac.EvalPermission(dashboards.ActionSnapshotsCreate), ac.EvalPermission(dashboards.ActionDashboardsRead, dashboards.ScopeDashboardsProvider.GetResourceScopeUID(cmd.Dashboard.GetNestedString("uid"))))
 		if canSave, err := hs.AccessControl.Evaluate(c.Req.Context(), c.SignedInUser, evaluator); err != nil || !canSave {
 			c.JsonApiErr(http.StatusForbidden, "forbidden", err)
 			return
@@ -224,6 +224,17 @@ func (hs *HTTPServer) DeleteDashboardSnapshot(c *contextmodel.ReqContext) respon
 	// to the user’s org role, which for editors and admins would essentially always be allowed here. With RBAC,
 	// all permissions must be explicit, so the lack of a rule for dashboard 0 means the guardian will reject.
 	dashboardID := queryResult.Dashboard.Get("id").MustInt64()
+
+	// If the UID is set, fetch the dashboard ID from the UID
+	dashboardUID := queryResult.Dashboard.Get("uid").MustString()
+	if dashboardUID != "" {
+		query := &dashboards.GetDashboardQuery{UID: dashboardUID, OrgID: c.SignedInUser.GetOrgID()}
+		dashboard, err := hs.DashboardService.GetDashboard(c.Req.Context(), query)
+		if err != nil {
+			return response.Error(http.StatusInternalServerError, "Failed to get dashboard by UID", err)
+		}
+		dashboardID = dashboard.ID
+	}
 
 	if dashboardID != 0 {
 		g, err := guardian.New(c.Req.Context(), dashboardID, c.SignedInUser.GetOrgID(), c.SignedInUser)

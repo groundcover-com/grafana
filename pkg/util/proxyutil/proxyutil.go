@@ -7,7 +7,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/grafana/authlib/claims"
+	claims "github.com/grafana/authlib/types"
 	"github.com/grafana/grafana/pkg/apimachinery/identity"
 )
 
@@ -79,7 +79,7 @@ func ClearCookieHeader(req *http.Request, keepCookiesNames []string, skipCookies
 
 	req.Header.Del("Cookie")
 
-	sortedCookies := []string{}
+	sortedCookies := make([]string, 0, len(keepCookies))
 	for name := range keepCookies {
 		sortedCookies = append(sortedCookies, name)
 	}

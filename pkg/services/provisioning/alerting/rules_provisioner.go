@@ -11,6 +11,7 @@ import (
 	"github.com/grafana/grafana/pkg/services/dashboards"
 	"github.com/grafana/grafana/pkg/services/folder"
 	"github.com/grafana/grafana/pkg/services/folder/folderimpl"
+	alertingac "github.com/grafana/grafana/pkg/services/ngalert/accesscontrol"
 	alert_models "github.com/grafana/grafana/pkg/services/ngalert/models"
 	"github.com/grafana/grafana/pkg/services/ngalert/provisioning"
 	"github.com/grafana/grafana/pkg/services/org"
@@ -45,7 +46,8 @@ func (prov *defaultAlertRuleProvisioner) Provision(ctx context.Context,
 	files []*AlertingFile) error {
 	for _, file := range files {
 		for _, group := range file.Groups {
-			u := provisionerUser(group.OrgID)
+			ctx, u := identity.WithServiceIdentity(ctx, group.OrgID)
+
 			folderUID, err := prov.getOrCreateFolderFullpath(ctx, group.FolderFullpath, group.OrgID)
 			if err != nil {
 				prov.logger.Error("failed to get or create folder", "folder", group.FolderFullpath, "org", group.OrgID, "err", err)
@@ -120,11 +122,13 @@ func (prov *defaultAlertRuleProvisioner) getOrCreateFolderFullpath(
 
 func (prov *defaultAlertRuleProvisioner) getOrCreateFolderByTitle(
 	ctx context.Context, folderName string, orgID int64, parentUID *string) (string, error) {
+	ctx, user := identity.WithServiceIdentity(ctx, orgID)
+
 	cmd := &folder.GetFolderQuery{
 		Title:        &folderName,
 		ParentUID:    parentUID,
 		OrgID:        orgID,
-		SignedInUser: provisionerUser(orgID),
+		SignedInUser: user,
 	}
 
 	cmdResult, err := prov.folderService.Get(ctx, cmd)
@@ -165,6 +169,10 @@ var provisionerUser = func(orgID int64) identity.Requester {
 			{Action: dashboards.ActionFoldersRead, Scope: dashboards.ScopeFoldersAll},
 			{Action: accesscontrol.ActionAlertingProvisioningReadSecrets, Scope: dashboards.ScopeFoldersAll},
 			{Action: accesscontrol.ActionAlertingProvisioningWrite, Scope: dashboards.ScopeFoldersAll},
+			// Required for updating protected fields in contact points
+			{Action: accesscontrol.ActionAlertingReceiversRead, Scope: alertingac.ScopeReceiversAll},
+			{Action: accesscontrol.ActionAlertingReceiversUpdate, Scope: alertingac.ScopeReceiversAll},
+			{Action: accesscontrol.ActionAlertingReceiversUpdateProtected, Scope: alertingac.ScopeReceiversAll},
 		},
 	)
 }

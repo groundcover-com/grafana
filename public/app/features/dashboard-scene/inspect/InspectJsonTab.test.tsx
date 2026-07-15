@@ -12,14 +12,14 @@ import {
 } from '@grafana/data';
 import { getPanelPlugin } from '@grafana/data/test/__mocks__/pluginMocks';
 import { setPluginImportUtils, setRunRequest } from '@grafana/runtime';
-import { SceneCanvasText, SceneDataTransformer, SceneQueryRunner, VizPanel } from '@grafana/scenes';
+import { SceneCanvasText, SceneDataTransformer, SceneGridLayout, SceneQueryRunner, VizPanel } from '@grafana/scenes';
 import * as libpanels from 'app/features/library-panels/state/api';
 import { getStandardTransformers } from 'app/features/transformers/standardTransformers';
 
-import { DashboardGridItem } from '../scene/DashboardGridItem';
 import { DashboardScene } from '../scene/DashboardScene';
 import { LibraryPanelBehavior } from '../scene/LibraryPanelBehavior';
 import { VizPanelLinks, VizPanelLinksMenu } from '../scene/PanelLinks';
+import { DashboardGridItem } from '../scene/layout-default/DashboardGridItem';
 import { DefaultGridLayoutManager } from '../scene/layout-default/DefaultGridLayoutManager';
 import { vizPanelToPanel } from '../serialization/transformSceneToSaveModel';
 import { activateFullSceneTree } from '../utils/test-utils';
@@ -170,6 +170,51 @@ describe('InspectJsonTab', () => {
 
     expect(tab.state.onClose).toHaveBeenCalled();
   });
+
+  it('Can update gridPos and forces layout re-render', async () => {
+    const { tab, panel, scene } = await buildTestScene();
+
+    // Get the layout manager and spy on the grid's forceRender
+    const layoutManager = scene.state.body as DefaultGridLayoutManager;
+    const grid = layoutManager.state.grid as SceneGridLayout;
+    const forceRenderSpy = jest.spyOn(grid, 'forceRender');
+
+    const originalGridItem = panel.parent as DashboardGridItem;
+    expect(originalGridItem.state.x).toBe(0);
+    expect(originalGridItem.state.y).toBe(0);
+    expect(originalGridItem.state.width).toBe(8);
+    expect(originalGridItem.state.height).toBe(10);
+
+    tab.onCodeEditorBlur(`{
+      "id": 12,
+      "type": "table",
+      "title": "Panel A",
+      "gridPos": {
+        "x": 5,
+        "y": 10,
+        "w": 12,
+        "h": 8
+      },
+      "options": {},
+      "fieldConfig": {},
+      "transformations": [],
+      "transparent": false
+    }`);
+
+    tab.onApplyChange();
+
+    const panel2 = findVizPanelByKey(scene, panel.state.key)!;
+    const gridItem = panel2.parent as DashboardGridItem;
+
+    // Verify all gridPos properties are updated
+    expect(gridItem.state.x).toBe(5);
+    expect(gridItem.state.y).toBe(10);
+    expect(gridItem.state.width).toBe(12);
+    expect(gridItem.state.height).toBe(8);
+
+    // Verify forceRender was called on the layout to apply position changes
+    expect(forceRenderSpy).toHaveBeenCalled();
+  });
 });
 
 function buildTestPanel() {
@@ -223,7 +268,7 @@ async function buildTestSceneWithLibraryPanel() {
     title: 'Panel A',
     pluginId: 'table',
     key: 'panel-12',
-    $behaviors: [new LibraryPanelBehavior({ title: 'LibraryPanel A title', name: 'LibraryPanel A', uid: '111' })],
+    $behaviors: [new LibraryPanelBehavior({ name: 'LibraryPanel A', uid: '111' })],
     titleItems: [new VizPanelLinks({ menu: new VizPanelLinksMenu({}) })],
     $data: new SceneDataTransformer({
       transformations: [

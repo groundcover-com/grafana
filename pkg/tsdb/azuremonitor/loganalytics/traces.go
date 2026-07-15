@@ -114,8 +114,8 @@ func buildTracesQuery(operationId string, parentSpanID *string, traceTypes []str
 		`| extend serviceName = cloud_RoleName` +
 		`| extend serviceTags = bag_pack_columns(cloud_RoleInstance, cloud_RoleName)`
 	propertiesQuery := fmt.Sprintf(`| extend tags = %s`, propertiesFunc)
-	projectClause := `| project-rename traceID = operation_Id, parentSpanID = operation_ParentId, startTime = timestamp` +
-		`| project startTime, itemType, serviceName, duration, traceID, spanID, parentSpanID, operationName, serviceTags, tags, itemId` +
+	projectClause := `| project-rename traceID = operation_Id, parentSpanID = operation_ParentId, startTime = timestamp, resource = _ResourceId` +
+		`| project startTime, itemType, serviceName, duration, traceID, spanID, parentSpanID, operationName, serviceTags, tags, itemId, resource` +
 		`| order by startTime asc`
 	return baseQuery + whereClause + parentWhereClause + propertiesStaticQuery + errorProperty + propertiesQuery + filtersClause + projectClause
 }
@@ -125,7 +125,7 @@ func buildTracesLogsQuery(operationId string, resources []string) string {
 	sort.Strings(types)
 	selectors := "union " + strings.Join(types, ",\n") + "\n"
 	if len(resources) > 0 {
-		intermediate := make([]string, 0)
+		intermediate := make([]string, 0, len(resources)*len(types))
 		for _, resource := range resources {
 			for _, table := range types {
 				intermediate = append(intermediate, fmt.Sprintf("app('%s').%s", resource, table))
@@ -198,7 +198,7 @@ func buildAppInsightsQuery(ctx context.Context, query backend.DataQuery, dsInfo 
 	resultFormat := ParseResultFormat(azureTracesTarget.ResultFormat, dataquery.AzureQueryTypeAzureTraces)
 
 	resources := azureTracesTarget.Resources
-	if query.QueryType == string(dataquery.AzureQueryTypeTraceql) {
+	if query.QueryType == string(dataquery.AzureQueryTypeTraceExemplar) {
 		subscription, err := utils.GetFirstSubscriptionOrDefault(ctx, dsInfo, logger)
 		if err != nil {
 			errorMessage := fmt.Errorf("failed to retrieve subscription for trace exemplars query: %w", err)
@@ -234,7 +234,7 @@ func buildAppInsightsQuery(ctx context.Context, query backend.DataQuery, dsInfo 
 	}
 	sort.Strings(queryResources)
 
-	if query.QueryType == string(dataquery.AzureQueryTypeTraceql) {
+	if query.QueryType == string(dataquery.AzureQueryTypeTraceExemplar) {
 		resources = queryResources
 		resourceOrWorkspace = resources[0]
 	}

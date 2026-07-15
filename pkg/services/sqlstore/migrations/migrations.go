@@ -35,6 +35,7 @@ func (oss *OSSMigrations) AddMigration(mg *Migrator) {
 	addStarMigrations(mg)
 	addOrgMigrations(mg)
 	addDashboardMigration(mg) // Do NOT add more migrations to this function.
+	addDashboardUIDStarMigrations(mg)
 	addDataSourceMigration(mg)
 	addApiKeyMigrations(mg)
 	addDashboardSnapshotMigrations(mg)
@@ -111,6 +112,7 @@ func (oss *OSSMigrations) AddMigration(mg *Migrator) {
 	// https://github.com/grafana/identity-access-team/issues/546: tracks removal of the feature toggle from the annotation permission migration
 	if oss.features != nil && oss.features.IsEnabledGlobally(featuremgmt.FlagAnnotationPermissionUpdate) {
 		accesscontrol.AddManagedDashboardAnnotationActionsMigration(mg)
+		accesscontrol.AddAnnotationsAllScopeReplacementMigration(mg)
 	}
 
 	addCloudMigrationsMigrations(mg)
@@ -138,21 +140,14 @@ func (oss *OSSMigrations) AddMigration(mg *Migrator) {
 	accesscontrol.AddActionSetPermissionsMigrator(mg)
 
 	externalsession.AddMigration(mg)
-}
 
-func addStarMigrations(mg *Migrator) {
-	starV1 := Table{
-		Name: "star",
-		Columns: []*Column{
-			{Name: "id", Type: DB_BigInt, IsPrimaryKey: true, IsAutoIncrement: true},
-			{Name: "user_id", Type: DB_BigInt, Nullable: false},
-			{Name: "dashboard_id", Type: DB_BigInt, Nullable: false},
-		},
-		Indices: []*Index{
-			{Cols: []string{"user_id", "dashboard_id"}, Type: UniqueIndex},
-		},
-	}
+	accesscontrol.AddReceiverCreateScopeMigration(mg)
 
-	mg.AddMigration("create star table", NewAddTableMigration(starV1))
-	mg.AddMigration("add unique index star.user_id_dashboard_id", NewAddIndexMigration(starV1, starV1.Indices[0]))
+	ualert.AddAlertRuleUpdatedByMigration(mg)
+
+	ualert.AddAlertRuleStateTable(mg)
+
+	ualert.AddAlertRuleGuidMigration(mg)
+
+	accesscontrol.AddReceiverProtectedFieldsEditor(mg)
 }

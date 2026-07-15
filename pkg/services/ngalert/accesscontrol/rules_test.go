@@ -14,7 +14,6 @@ import (
 	"github.com/grafana/grafana/pkg/expr"
 	"github.com/grafana/grafana/pkg/services/accesscontrol"
 	"github.com/grafana/grafana/pkg/services/accesscontrol/acimpl"
-	"github.com/grafana/grafana/pkg/services/authz/zanzana"
 	"github.com/grafana/grafana/pkg/services/dashboards"
 	"github.com/grafana/grafana/pkg/services/datasources"
 	"github.com/grafana/grafana/pkg/services/featuremgmt"
@@ -427,7 +426,7 @@ func TestAuthorizeRuleChanges(t *testing.T) {
 				}
 			})
 
-			ac := acimpl.ProvideAccessControl(featuremgmt.WithFeatures(), zanzana.NewNoopClient())
+			ac := acimpl.ProvideAccessControl(featuremgmt.WithFeatures())
 			srv := NewRuleService(ac)
 			err := srv.AuthorizeRuleChanges(context.Background(), createUserWithPermissions(permissions), groupChanges)
 			require.NoError(t, err)
@@ -496,7 +495,7 @@ func TestCheckDatasourcePermissionsForRule(t *testing.T) {
 func Test_authorizeAccessToRuleGroup(t *testing.T) {
 	t.Run("should succeed if user has access to all namespaces", func(t *testing.T) {
 		rules := models.RuleGen.GenerateManyRef(1, 5)
-		namespaceScopes := make([]string, 0)
+		namespaceScopes := make([]string, 0, len(rules))
 		for _, rule := range rules {
 			namespaceScopes = append(namespaceScopes, dashboards.ScopeFoldersProvider.GetResourceScopeUID(rule.NamespaceUID))
 		}

@@ -18,11 +18,6 @@ labels:
 title: Histogram
 weight: 100
 refs:
-  standard-calculations:
-    - pattern: /docs/grafana/
-      destination: /docs/grafana/<GRAFANA_VERSION>/panels-visualizations/query-transform-data/calculation-types/
-    - pattern: /docs/grafana-cloud/
-      destination: /docs/grafana-cloud/visualizations/panels-visualizations/query-transform-data/calculation-types/
   color-scheme:
     - pattern: /docs/grafana/
       destination: /docs/grafana/<GRAFANA_VERSION>/panels-visualizations/configure-standard-options/#color-scheme
@@ -152,7 +147,7 @@ Choose from the following:
 
 {{< docs/shared lookup="visualizations/standard-options.md" source="grafana" version="<GRAFANA_VERSION>" >}}
 
-### Data links
+### Data links and actions
 
 {{< docs/shared lookup="visualizations/datalink-options.md" source="grafana" version="<GRAFANA_VERSION>" >}}
 

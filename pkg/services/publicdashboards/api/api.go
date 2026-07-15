@@ -22,6 +22,12 @@ import (
 	"github.com/grafana/grafana/pkg/web"
 )
 
+// The struct size the request body unmarshals to is a few bytes and much deviation from that would mean a malformed body.
+const (
+	maxQueryBodySize  = 10 * 1024 // 10 KiB
+	maxMutateBodySize = 10 * 1024 // 10 KiB
+)
+
 type Api struct {
 	PublicDashboardService publicdashboards.Service
 	Middleware             publicdashboards.Middleware
@@ -55,12 +61,8 @@ func ProvideApi(
 	}
 
 	// register endpoints if the feature is enabled
-	if features.IsEnabledGlobally(featuremgmt.FlagPublicDashboards) && cfg.PublicDashboardsEnabled {
+	if cfg.PublicDashboardsEnabled {
 		api.RegisterAPIEndpoints()
-	}
-
-	if !features.IsEnabledGlobally(featuremgmt.FlagPublicDashboards) {
-		api.log.Warn("[Deprecated] The publicDashboards feature toggle will be removed in Grafana v11. To disable the public dashboards feature, use the public_dashboards.enabled setting.")
 	}
 
 	return api
@@ -189,6 +191,8 @@ func (api *Api) CreatePublicDashboard(c *contextmodel.ReqContext) response.Respo
 		return response.Err(ErrInvalidUid.Errorf("CreatePublicDashboard: invalid Uid %s", dashboardUid))
 	}
 
+	c.Req.Body = http.MaxBytesReader(c.Resp, c.Req.Body, maxMutateBodySize)
+
 	pdDTO := &PublicDashboardDTO{}
 	if err := web.Bind(c.Req, pdDTO); err != nil {
 		return response.Err(ErrBadRequest.Errorf("CreatePublicDashboard: bad request data %v", err))
@@ -248,6 +252,8 @@ func (api *Api) UpdatePublicDashboard(c *contextmodel.ReqContext) response.Respo
 		return response.Err(ErrInvalidUid.Errorf("UpdatePublicDashboard: invalid Uid %s", uid))
 	}
 
+	c.Req.Body = http.MaxBytesReader(c.Resp, c.Req.Body, maxMutateBodySize)
+
 	pdDTO := &PublicDashboardDTO{}
 	if err := web.Bind(c.Req, pdDTO); err != nil {
 		return response.Err(ErrBadRequest.Errorf("UpdatePublicDashboard: bad request data %v", err))
@@ -292,7 +298,7 @@ func (api *Api) DeletePublicDashboard(c *contextmodel.ReqContext) response.Respo
 		return response.Err(ErrInvalidUid.Errorf("DeletePublicDashboard: invalid dashboard Uid %s", dashboardUid))
 	}
 
-	err := api.PublicDashboardService.Delete(c.Req.Context(), uid, dashboardUid)
+	err := api.PublicDashboardService.Delete(c.Req.Context(), c.GetOrgID(), uid, dashboardUid)
 	if err != nil {
 		return response.Err(err)
 	}

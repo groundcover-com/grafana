@@ -74,7 +74,7 @@ func (db *PostgresDialect) SQLType(c *Column) string {
 	case DB_NVarchar:
 		res = DB_Varchar
 	case DB_Uuid:
-		res = DB_Uuid
+		return DB_Uuid // do not add the length options
 	case DB_Blob, DB_TinyBlob, DB_MediumBlob, DB_LongBlob:
 		return DB_Bytea
 	case DB_Double:
@@ -109,7 +109,7 @@ func (db *PostgresDialect) DropIndexSQL(tableName string, index *Index) string {
 }
 
 func (db *PostgresDialect) UpdateTableSQL(tableName string, columns []*Column) string {
-	var statements = []string{}
+	statements := make([]string, 0, len(columns))
 
 	for _, col := range columns {
 		statements = append(statements, "ALTER "+db.Quote(col.Name)+" TYPE "+db.SQLType(col))

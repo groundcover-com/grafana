@@ -1,4 +1,4 @@
-import { Observable, defer, finalize, map, of } from 'rxjs';
+import { Observable, debounce, defer, filter, finalize, first, interval, map, of } from 'rxjs';
 
 import {
   DataSourceApi,
@@ -10,11 +10,26 @@ import {
   DataTopic,
   PanelData,
   DataFrame,
+  LoadingState,
+  TimeRange,
 } from '@grafana/data';
 import { SceneDataProvider, SceneDataTransformer, SceneObject } from '@grafana/scenes';
-import { findVizPanelByKey, getVizPanelKeyForPanelId } from 'app/features/dashboard-scene/utils/utils';
+import {
+  activateSceneObjectAndParentTree,
+  findOriginalVizPanelByKey,
+  getVizPanelKeyForPanelId,
+} from 'app/features/dashboard-scene/utils/utils';
+
+import { MIXED_REQUEST_PREFIX } from '../mixed/MixedDataSource';
 
 import { DashboardQuery } from './types';
+
+function isSameRange(a: TimeRange | undefined, b: TimeRange | undefined): boolean {
+  if (!a?.from || !a?.to || !b?.from || !b?.to) {
+    return false;
+  }
+  return a.from.valueOf() === b.from.valueOf() && a.to.valueOf() === b.to.valueOf();
+}
 
 /**
  * This should not really be called
@@ -31,10 +46,6 @@ export class DashboardDatasource extends DataSourceApi<DashboardQuery> {
   query(options: DataQueryRequest<DashboardQuery>): Observable<DataQueryResponse> {
     const sceneScopedVar: ScopedVar | undefined = options.scopedVars?.__sceneObject;
     let scene: SceneObject | undefined = sceneScopedVar ? (sceneScopedVar.value.valueOf() as SceneObject) : undefined;
-
-    if (options.requestId.indexOf('mixed') > -1) {
-      throw new Error('Dashboard data source cannot be used with Mixed data source.');
-    }
 
     if (!scene) {
       throw new Error('Can only be called from a scene');
@@ -72,9 +83,33 @@ export class DashboardDatasource extends DataSourceApi<DashboardQuery> {
         sourceDataProvider?.setContainerWidth(500);
       }
 
-      const cleanUp = sourceDataProvider!.activate();
+      const cleanUp = activateSceneObjectAndParentTree(sourceDataProvider!);
+
+      // Only the Mixed-DS path uses `first(Done || Error)` to complete the
+      // substream, so only that path needs to defend against a stale Done
+      // replayed from the upstream SceneQueryRunner's ReplaySubject after a
+      // time-range change. The non-Mixed path stays open and naturally
+      // re-emits when the fresh Done arrives, so adding the filter there
+      // could only hurt: a chain panel with a `PanelTimeRange` override
+      // legitimately observes ranges that differ from the upstream and we
+      // would block its terminal emission indefinitely.
+      const isMixedDs = options.requestId.includes(MIXED_REQUEST_PREFIX);
 
       return sourceDataProvider!.getResultsStream!().pipe(
+        filter((result) => {
+          if (!isMixedDs) {
+            return true;
+          }
+          const state = result.data.state;
+          if (state !== LoadingState.Done && state !== LoadingState.Error) {
+            return true;
+          }
+          const upstreamRange = result.data.request?.range;
+          if (!upstreamRange?.from || !upstreamRange?.to) {
+            return true;
+          }
+          return isSameRange(upstreamRange, options.range);
+        }),
         map((result) => {
           return {
             data: this.getDataFramesForQueryTopic(result.data, query),
@@ -84,7 +119,8 @@ export class DashboardDatasource extends DataSourceApi<DashboardQuery> {
             key: 'source-ds-provider',
           };
         }),
-        finalize(cleanUp)
+        this.emitFirstLoadedDataIfMixedDS(options.requestId),
+        finalize(() => cleanUp?.())
       );
     });
   }
@@ -105,7 +141,47 @@ export class DashboardDatasource extends DataSourceApi<DashboardQuery> {
   }
 
   private findSourcePanel(scene: SceneObject, panelId: number) {
-    return findVizPanelByKey(scene, getVizPanelKeyForPanelId(panelId));
+    // We're trying to find the original panel, not a cloned one, since `panelId` alone cannot resolve clones
+    return findOriginalVizPanelByKey(scene, getVizPanelKeyForPanelId(panelId));
+  }
+
+  private emitFirstLoadedDataIfMixedDS(
+    requestId: string
+  ): (source: Observable<DataQueryResponse>) => Observable<DataQueryResponse> {
+    return (source: Observable<DataQueryResponse>) => {
+      if (requestId.includes(MIXED_REQUEST_PREFIX)) {
+        let count = 0;
+
+        return source.pipe(
+          /*
+           * We can have the following piped values scenarios:
+           * Loading -> Done         - initial load
+           * Done -> Loading -> Done - refresh
+           * Done                    - adding another query in editor
+           *
+           * When we see Done as a first element this is because of ReplaySubject in SceneQueryRunner
+           *
+           * we use first(...) below to emit correct result which is last value with Done/Error states
+           *
+           * to avoid emitting first Done/Error (due to ReplaySubject) we selectively debounce only first value with such states
+           */
+          debounce((val) => {
+            if ([LoadingState.Done, LoadingState.Error].includes(val.state!) && count === 0) {
+              count++;
+              // in the refresh scenario we need to debounce first Done/Error until Loading arrives
+              //   400ms here is a magic number that was sufficient enough with the 20x cpu throttle
+              //   this still might affect slower machines but the issue affects only panel view/edit modes
+              return interval(400);
+            }
+            count++;
+            return interval(0);
+          }),
+          first((val) => val.state === LoadingState.Done || val.state === LoadingState.Error)
+        );
+      }
+
+      return source;
+    };
   }
 
   testDatasource(): Promise<TestDataSourceResponse> {

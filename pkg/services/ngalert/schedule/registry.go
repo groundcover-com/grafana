@@ -87,11 +87,6 @@ func (r *ruleRegistry) keyMap() map[models.AlertRuleKey]struct{} {
 	return definitionsIDs
 }
 
-type RuleVersionAndPauseStatus struct {
-	Fingerprint fingerprint
-	IsPaused    bool
-}
-
 type Evaluation struct {
 	scheduledAt time.Time
 	rule        *models.AlertRule
@@ -105,13 +100,13 @@ func (e *Evaluation) Fingerprint() fingerprint {
 type alertRulesRegistry struct {
 	rules        map[models.AlertRuleKey]*models.AlertRule
 	folderTitles map[models.FolderKey]string
-	mu           sync.Mutex
+	mu           sync.RWMutex
 }
 
 // all returns all rules in the registry.
 func (r *alertRulesRegistry) all() ([]*models.AlertRule, map[models.FolderKey]string) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
+	r.mu.RLock()
+	defer r.mu.RUnlock()
 	result := make([]*models.AlertRule, 0, len(r.rules))
 	for _, rule := range r.rules {
 		result = append(result, rule)
@@ -120,8 +115,8 @@ func (r *alertRulesRegistry) all() ([]*models.AlertRule, map[models.FolderKey]st
 }
 
 func (r *alertRulesRegistry) get(k models.AlertRuleKey) *models.AlertRule {
-	r.mu.Lock()
-	defer r.mu.Unlock()
+	r.mu.RLock()
+	defer r.mu.RUnlock()
 	return r.rules[k]
 }
 
@@ -161,12 +156,14 @@ func (r *alertRulesRegistry) del(k models.AlertRuleKey) (*models.AlertRule, bool
 }
 
 func (r *alertRulesRegistry) isEmpty() bool {
-	r.mu.Lock()
-	defer r.mu.Unlock()
+	r.mu.RLock()
+	defer r.mu.RUnlock()
 	return len(r.rules) == 0
 }
 
 func (r *alertRulesRegistry) needsUpdate(keys []models.AlertRuleKeyWithVersion) bool {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
 	if len(r.rules) != len(keys) {
 		return true
 	}
@@ -315,8 +312,6 @@ func (r ruleWithFolder) Fingerprint() fingerprint {
 
 	// fields that do not affect the state.
 	// TODO consider removing fields below from the fingerprint
-	writeInt(rule.ID)
-	writeInt(rule.OrgID)
 	writeInt(int64(rule.For))
 	if rule.DashboardUID != nil {
 		writeString(*rule.DashboardUID)

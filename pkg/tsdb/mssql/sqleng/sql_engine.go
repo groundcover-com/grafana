@@ -19,6 +19,7 @@ import (
 	"github.com/grafana/grafana-plugin-sdk-go/backend/log"
 	"github.com/grafana/grafana-plugin-sdk-go/data"
 	"github.com/grafana/grafana-plugin-sdk-go/data/sqlutil"
+	"github.com/grafana/grafana/pkg/cmd/grafana-cli/logger"
 )
 
 // MetaKeyExecutedQueryString is the key where the executed query should get stored
@@ -152,15 +153,6 @@ func (e *DataSourceHandler) Dispose() {
 	e.log.Debug("DB disposed")
 }
 
-func (e *DataSourceHandler) CheckHealth(ctx context.Context, req *backend.CheckHealthRequest) (*backend.CheckHealthResult, error) {
-	err := e.db.Ping()
-
-	if err != nil {
-		return &backend.CheckHealthResult{Status: backend.HealthStatusError, Message: e.TransformQueryError(e.log, err).Error()}, nil
-	}
-	return &backend.CheckHealthResult{Status: backend.HealthStatusOk, Message: "Database Connection OK"}, nil
-}
-
 func (e *DataSourceHandler) QueryData(ctx context.Context, req *backend.QueryDataRequest) (*backend.QueryDataResponse, error) {
 	result := backend.NewQueryDataResponse()
 	ch := make(chan DBDataResponse, len(req.Queries))
@@ -240,6 +232,9 @@ func (e *DataSourceHandler) executeQuery(query backend.DataQuery, wg *sync.WaitG
 		emptyFrame.SetMeta(&data.FrameMeta{
 			ExecutedQueryString: query,
 		})
+		if isDownstreamError(err) {
+			source = backend.ErrorSourceDownstream
+		}
 		queryResult.dataResponse.Error = fmt.Errorf("%s: %w", frameErr, err)
 		queryResult.dataResponse.ErrorSource = source
 		queryResult.dataResponse.Frames = data.Frames{&emptyFrame}
@@ -306,7 +301,7 @@ func (e *DataSourceHandler) executeQuery(query backend.DataQuery, wg *sync.WaitG
 	if qm.Format == dataQueryFormatSeries {
 		// time series has to have time column
 		if qm.timeIndex == -1 {
-			errAppendDebug("db has no time column", errors.New("no time column found"), interpolatedQuery, backend.ErrorSourceDownstream)
+			errAppendDebug("db has no time column", errors.New("time column is missing; make sure your data includes a time column for time series format or switch to a table format that doesn't require it"), interpolatedQuery, backend.ErrorSourceDownstream)
 			return
 		}
 
@@ -354,25 +349,46 @@ func (e *DataSourceHandler) executeQuery(query backend.DataQuery, wg *sync.WaitG
 				}
 			}
 		}
-		if qm.FillMissing != nil {
-			// we align the start-time
-			startUnixTime := qm.TimeRange.From.Unix() / int64(qm.Interval.Seconds()) * int64(qm.Interval.Seconds())
-			alignedTimeRange := backend.TimeRange{
-				From: time.Unix(startUnixTime, 0),
-				To:   qm.TimeRange.To,
-			}
-
-			var err error
-			frame, err = sqlutil.ResampleWideFrame(frame, qm.FillMissing, alignedTimeRange, qm.Interval)
-			if err != nil {
-				logger.Error("Failed to resample dataframe", "err", err)
-				frame.AppendNotices(data.Notice{Text: "Failed to resample dataframe", Severity: data.NoticeSeverityWarning})
-			}
+		if qm.FillMissing != nil && qm.Interval > 0 {
+			frame = e.applyFill(frame, qm)
 		}
 	}
 
 	queryResult.dataResponse.Frames = data.Frames{frame}
 	ch <- queryResult
+}
+
+// applyFill resamples frame using the fill configuration in qm. If the number
+// of fill points would exceed the row limit the fill is skipped and a warning
+// notice is appended to the frame instead.
+func (e *DataSourceHandler) applyFill(frame *data.Frame, qm *dataQueryModel) *data.Frame {
+	// we align the start-time
+	startUnixTime := qm.TimeRange.From.Unix() / int64(qm.Interval.Seconds()) * int64(qm.Interval.Seconds())
+	alignedTimeRange := backend.TimeRange{
+		From: time.Unix(startUnixTime, 0),
+		To:   qm.TimeRange.To,
+	}
+
+	// Guard against excessive memory allocation from fill operations that span
+	// a very large time range relative to the fill interval.
+	numFillPoints := int64(alignedTimeRange.To.Sub(alignedTimeRange.From) / qm.Interval)
+	if numFillPoints > e.rowLimit {
+		e.log.Warn("Skipping fill: number of fill points exceeds row limit",
+			"numFillPoints", numFillPoints, "rowLimit", e.rowLimit)
+		frame.AppendNotices(data.Notice{
+			Text:     "Fill operation skipped: time range and interval would require more points than the configured row limit",
+			Severity: data.NoticeSeverityWarning,
+		})
+		return frame
+	}
+
+	var err error
+	frame, err = sqlutil.ResampleWideFrame(frame, qm.FillMissing, alignedTimeRange, qm.Interval) //nolint:staticcheck
+	if err != nil {
+		logger.Error("Failed to resample dataframe", "err", err)
+		frame.AppendNotices(data.Notice{Text: "Failed to resample dataframe", Severity: data.NoticeSeverityWarning})
+	}
+	return frame
 }
 
 // Interpolate provides global macros/substitutions for all sql datasources.
@@ -449,7 +465,7 @@ func (e *DataSourceHandler) newProcessCfg(query backend.DataQuery, queryContext 
 			}
 		}
 
-		if qm.Format == dataQueryFormatTable && col == "timeend" {
+		if qm.Format == dataQueryFormatTable && strings.EqualFold(col, "timeend") {
 			qm.timeEndIndex = i
 			continue
 		}
@@ -647,4 +663,21 @@ func epochPrecisionToMS(value float64) float64 {
 	}
 
 	return value
+}
+
+func isDownstreamError(err error) bool {
+	if backend.IsDownstreamError(err) {
+		return true
+	}
+	resultProcessingDownstreamErrors := []error{
+		data.ErrorInputFieldsWithoutRows,
+		data.ErrorSeriesUnsorted,
+		data.ErrorNullTimeValues,
+	}
+	for _, e := range resultProcessingDownstreamErrors {
+		if errors.Is(err, e) {
+			return true
+		}
+	}
+	return false
 }

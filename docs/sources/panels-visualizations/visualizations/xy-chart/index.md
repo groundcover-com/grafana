@@ -16,40 +16,16 @@ description: Configure options for Grafana's xy chart
 title: XY chart
 weight: 100
 refs:
-  panel-options:
-    - pattern: /docs/grafana/
-      destination: /docs/grafana/<GRAFANA_VERSION>/panels-visualizations/configure-panel-options/
-    - pattern: /docs/grafana-cloud/
-      destination: /docs/grafana-cloud/visualizations/panels-visualizations/configure-panel-options/
-  data-links:
-    - pattern: /docs/grafana/
-      destination: /docs/grafana/<GRAFANA_VERSION>/panels-visualizations/configure-data-links/
-    - pattern: /docs/grafana-cloud/
-      destination: /docs/grafana-cloud/visualizations/panels-visualizations/configure-data-links/
   configure-standard-options:
     - pattern: /docs/grafana/
       destination: /docs/grafana/<GRAFANA_VERSION>/panels-visualizations/configure-standard-options/#max
     - pattern: /docs/grafana-cloud/
       destination: /docs/grafana-cloud/visualizations/panels-visualizations/configure-standard-options/#max
-  standard-options:
-    - pattern: /docs/grafana/
-      destination: /docs/grafana/<GRAFANA_VERSION>/panels-visualizations/configure-standard-options/
-    - pattern: /docs/grafana-cloud/
-      destination: /docs/grafana-cloud/visualizations/panels-visualizations/configure-standard-options/
   color-scheme:
     - pattern: /docs/grafana/
       destination: /docs/grafana/<GRAFANA_VERSION>/panels-visualizations/configure-standard-options/#color-scheme
     - pattern: /docs/grafana-cloud/
       destination: /docs/grafana-cloud/visualizations/panels-visualizations/configure-standard-options/#color-scheme
-    - pattern: /docs/grafana/
-      destination: /docs/grafana/<GRAFANA_VERSION>/panels-visualizations/configure-standard-options/#color-scheme
-    - pattern: /docs/grafana-cloud/
-      destination: /docs/grafana-cloud/visualizations/panels-visualizations/configure-standard-options/#color-scheme
-  add-a-field-override:
-    - pattern: /docs/grafana/
-      destination: /docs/grafana/<GRAFANA_VERSION>/panels-visualizations/configure-overrides/#add-a-field-override
-    - pattern: /docs/grafana-cloud/
-      destination: /docs/grafana-cloud/visualizations/panels-visualizations/configure-overrides/#add-a-field-override
   configure-field-overrides:
     - pattern: /docs/grafana/
       destination: /docs/grafana/<GRAFANA_VERSION>/panels-visualizations/configure-overrides/
@@ -222,9 +198,9 @@ You can customize the following standard options:
 - **Field min/max** - Enable **Field min/max** to have Grafana calculate the min or max of each field individually, based on the minimum or maximum value of the field.
 - **Color scheme** - Set single or multiple colors for your entire visualization. To learn more about color schemes, refer to [Configure standard options](ref:configure-standard-options).
 
-### Data links
+### Data links and actions
 
-{{< docs/shared lookup="visualizations/datalink-options.md" source="grafana" version="<GRAFANA_VERSION>" >}}
+{{< docs/shared lookup="visualizations/datalink-options-2.md" source="grafana" version="<GRAFANA_VERSION>" >}}
 
 ### Value mappings
 

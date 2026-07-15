@@ -114,7 +114,7 @@ func ValidationFailed(msgID string, opts ...BaseOpt) Base {
 // msgID should be structured as component.errorBrief, for example
 //
 //	sqleng.connectionError
-//	plugin.downstreamError
+//	plugin.requestFailureError
 func Internal(msgID string, opts ...BaseOpt) Base {
 	return NewBase(StatusInternal, msgID, opts...)
 }
@@ -191,7 +191,7 @@ func NotImplemented(msgID string, opts ...BaseOpt) Base {
 //
 //	area.downstreamError
 func BadGateway(msgID string, opts ...BaseOpt) Base {
-	newOpts := []BaseOpt{WithDownstream()}
+	newOpts := []BaseOpt{WithDownstream()} //nolint:prealloc
 	newOpts = append(newOpts, opts...)
 	return NewBase(StatusBadGateway, msgID, newOpts...)
 }
@@ -204,7 +204,7 @@ func BadGateway(msgID string, opts ...BaseOpt) Base {
 //
 //	area.downstreamTimeout
 func GatewayTimeout(msgID string, opts ...BaseOpt) Base {
-	newOpts := []BaseOpt{WithDownstream()}
+	newOpts := []BaseOpt{WithDownstream()} //nolint:prealloc
 	newOpts = append(newOpts, opts...)
 	return NewBase(StatusGatewayTimeout, msgID, newOpts...)
 }

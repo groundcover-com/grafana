@@ -4,6 +4,7 @@ import (
 	"context"
 )
 
+//go:generate mockery --name AuthInfoService --structname MockAuthInfoService --outpkg authinfotest --filename auth_info_service_mock.go --output ./authinfotest/
 type AuthInfoService interface {
 	GetAuthInfo(ctx context.Context, query *GetAuthInfoQuery) (*UserAuth, error)
 	GetUserLabels(ctx context.Context, query GetUserLabelsQuery) (map[int64]string, error)
@@ -22,14 +23,15 @@ type Store interface {
 
 const (
 	// modules
-	PasswordAuthModule  = "password"
-	APIKeyAuthModule    = "apikey"
-	SAMLAuthModule      = "auth.saml"
-	LDAPAuthModule      = "ldap"
-	AuthProxyAuthModule = "authproxy"
-	JWTModule           = "jwt"
-	ExtendedJWTModule   = "extendedjwt"
-	RenderModule        = "render"
+	PasswordAuthModule     = "password"
+	PasswordlessAuthModule = "passwordless"
+	APIKeyAuthModule       = "apikey"
+	SAMLAuthModule         = "auth.saml"
+	LDAPAuthModule         = "ldap"
+	AuthProxyAuthModule    = "authproxy"
+	JWTModule              = "jwt"
+	ExtendedJWTModule      = "extendedjwt"
+	RenderModule           = "render"
 	// OAuth provider modules
 	AzureADAuthModule    = "oauth_azuread"
 	GoogleAuthModule     = "oauth_google"

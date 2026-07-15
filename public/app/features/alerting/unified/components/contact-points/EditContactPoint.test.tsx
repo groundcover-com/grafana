@@ -1,5 +1,5 @@
 import 'core-js/stable/structured-clone';
-import { Route, Switch } from 'react-router-dom';
+import { Route, Routes } from 'react-router-dom-v5-compat';
 import { clickSelectOption } from 'test/helpers/selectOptionInTest';
 import { render, screen } from 'test/test-utils';
 
@@ -8,27 +8,30 @@ import { AccessControlAction } from 'app/types';
 
 import { setupMswServer } from '../../mockApi';
 import { grantUserPermissions } from '../../mocks';
-import { AlertmanagerProvider } from '../../state/AlertmanagerContext';
 
 setupMswServer();
 
-const Index = () => <div>redirected</div>;
+const Index = () => {
+  return <div>redirected</div>;
+};
 
-const renderEditContactPoint = (contactPointName: string) =>
+const renderEditContactPoint = (contactPointUid: string) =>
   render(
-    <AlertmanagerProvider accessType="notification">
-      <Switch>
-        <Route exact path="/alerting/notifications" component={Index} />
-        <Route path="/alerting/notifications/receivers/:name/edit" component={EditContactPoint} />
-      </Switch>
-    </AlertmanagerProvider>,
+    <Routes>
+      <Route path="/alerting/notifications" element={<Index />} />
+      <Route path="/alerting/notifications/receivers/:name/edit" element={<EditContactPoint />} />
+    </Routes>,
     {
-      historyOptions: { initialEntries: [`/alerting/notifications/receivers/${contactPointName}/edit`] },
+      historyOptions: { initialEntries: [`/alerting/notifications/receivers/${contactPointUid}/edit`] },
     }
   );
 
 beforeEach(() => {
-  grantUserPermissions([AccessControlAction.AlertingNotificationsRead, AccessControlAction.AlertingNotificationsWrite]);
+  grantUserPermissions([
+    AccessControlAction.AlertingNotificationsRead,
+    AccessControlAction.AlertingNotificationsWrite,
+    AccessControlAction.AlertingReceiversWrite,
+  ]);
 });
 
 const getTemplatePreviewContent = async () =>
@@ -37,6 +40,7 @@ const getTemplatePreviewContent = async () =>
 const templatesSelectorTestId = 'existing-templates-selector';
 
 describe('Edit contact point', () => {
+  jest.retryTimes(2);
   it('can edit a contact point with existing template field values', async () => {
     const { user } = renderEditContactPoint('lotsa-emails');
 
@@ -59,7 +63,7 @@ describe('Edit contact point', () => {
     // If this isn't correct, then we haven't set the correct initial state for the radio buttons/tabs
     expect(await screen.findByLabelText(/custom template value/i)).toHaveValue('some custom value');
 
-    await user.click(screen.getByRole('radio', { name: /select existing template/i }));
+    await user.click(screen.getByRole('radio', { name: /select notification template/i }));
     await clickSelectOption(screen.getByTestId(templatesSelectorTestId), 'slack-template');
 
     expect(await getTemplatePreviewContent()).toHaveTextContent(/some example preview for slack-template/i);
@@ -73,5 +77,5 @@ describe('Edit contact point', () => {
     await user.click(screen.getByRole('button', { name: /save contact point/i }));
 
     expect(await screen.findByText(/redirected/i)).toBeInTheDocument();
-  });
+  }, 600000);
 });

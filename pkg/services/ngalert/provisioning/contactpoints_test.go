@@ -17,9 +17,9 @@ import (
 	"github.com/grafana/grafana/pkg/components/simplejson"
 	"github.com/grafana/grafana/pkg/infra/db"
 	"github.com/grafana/grafana/pkg/infra/log"
+	"github.com/grafana/grafana/pkg/infra/tracing"
 	"github.com/grafana/grafana/pkg/services/accesscontrol"
 	"github.com/grafana/grafana/pkg/services/accesscontrol/acimpl"
-	"github.com/grafana/grafana/pkg/services/authz/zanzana"
 	"github.com/grafana/grafana/pkg/services/featuremgmt"
 	ac "github.com/grafana/grafana/pkg/services/ngalert/accesscontrol"
 	"github.com/grafana/grafana/pkg/services/ngalert/api/tooling/definitions"
@@ -149,7 +149,7 @@ func TestContactPointService(t *testing.T) {
 		require.NoError(t, err)
 		newCp.Settings = nil
 
-		err = sut.UpdateContactPoint(context.Background(), 1, newCp, models.ProvenanceAPI)
+		err = sut.UpdateContactPoint(context.Background(), 1, redactedUser, newCp, models.ProvenanceAPI)
 
 		require.ErrorIs(t, err, ErrValidation)
 	})
@@ -161,7 +161,7 @@ func TestContactPointService(t *testing.T) {
 		require.NoError(t, err)
 		newCp.Type = ""
 
-		err = sut.UpdateContactPoint(context.Background(), 1, newCp, models.ProvenanceAPI)
+		err = sut.UpdateContactPoint(context.Background(), 1, redactedUser, newCp, models.ProvenanceAPI)
 
 		require.ErrorIs(t, err, ErrValidation)
 	})
@@ -173,7 +173,7 @@ func TestContactPointService(t *testing.T) {
 		require.NoError(t, err)
 		newCp.Settings, _ = simplejson.NewJson([]byte(`{}`))
 
-		err = sut.UpdateContactPoint(context.Background(), 1, newCp, models.ProvenanceAPI)
+		err = sut.UpdateContactPoint(context.Background(), 1, redactedUser, newCp, models.ProvenanceAPI)
 
 		require.ErrorIs(t, err, ErrValidation)
 	})
@@ -200,7 +200,7 @@ func TestContactPointService(t *testing.T) {
 			return nil
 		}
 
-		err = sut.UpdateContactPoint(context.Background(), 1, newCp, models.ProvenanceAPI)
+		err = sut.UpdateContactPoint(context.Background(), 1, redactedUser, newCp, models.ProvenanceAPI)
 		require.NoError(t, err)
 
 		parsed, err := legacy_storage.DeserializeAlertmanagerConfig([]byte(store.LastSaveCommand.AlertmanagerConfiguration))
@@ -282,7 +282,7 @@ func TestContactPointService(t *testing.T) {
 				require.Equal(t, newCp.UID, cps[0].UID)
 				require.Equal(t, test.from, models.Provenance(cps[0].Provenance))
 
-				err = sut.UpdateContactPoint(context.Background(), 1, newCp, test.to)
+				err = sut.UpdateContactPoint(context.Background(), 1, redactedUser, newCp, test.to)
 				if test.errNil {
 					require.NoError(t, err)
 
@@ -423,6 +423,9 @@ func TestRemoveSecretsForContactPoint(t *testing.T) {
 		"webhook": func(settings map[string]any) { // add additional field to the settings because valid config does not allow it to be specified along with password
 			settings["authorization_credentials"] = "test-authz-creds"
 		},
+		"jira": func(settings map[string]any) { // add additional field to the settings because valid config does not allow it to be specified along with password
+			settings["api_token"] = "test-token"
+		},
 	}
 
 	configs := notify.AllKnownConfigsForTesting
@@ -486,7 +489,7 @@ func createContactPointServiceSutWithConfigStore(t *testing.T, secretService sec
 	provisioningStore := fakes.NewFakeProvisioningStore()
 
 	receiverService := notifier.NewReceiverService(
-		ac.NewReceiverAccess[*models.Receiver](acimpl.ProvideAccessControl(featuremgmt.WithFeatures(), zanzana.NewNoopClient()), true),
+		ac.NewReceiverAccess[*models.Receiver](acimpl.ProvideAccessControl(featuremgmt.WithFeatures()), true),
 		legacy_storage.NewAlertmanagerConfigStore(configStore),
 		provisioningStore,
 		&fakeAlertRuleNotificationStore{},
@@ -494,9 +497,11 @@ func createContactPointServiceSutWithConfigStore(t *testing.T, secretService sec
 		xact,
 		log.NewNopLogger(),
 		fakes.NewFakeReceiverPermissionsService(),
+		tracing.InitializeTracerForTest(),
 	)
 
 	return NewContactPointService(
+		ac.NewReceiverAccess[*models.Receiver](acimpl.ProvideAccessControl(featuremgmt.WithFeatures()), true),
 		legacy_storage.NewAlertmanagerConfigStore(configStore),
 		secretService,
 		provisioningStore,

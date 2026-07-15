@@ -14,6 +14,19 @@ import (
 const rsIdentifier = `([_a-zA-Z0-9]+)`
 const sExpr = `\$` + rsIdentifier + `\(([^\)]*)\)`
 
+var (
+	reBlockComment = regexp.MustCompile(`(?s)/\*.*?\*/`)
+	reLineComment  = regexp.MustCompile(`--[^\n]*`)
+)
+
+// stripSQLComments removes SQL line comments (--) and block comments (/* */)
+// from the query string.
+func stripSQLComments(sql string) string {
+	sql = reBlockComment.ReplaceAllString(sql, "")
+	sql = reLineComment.ReplaceAllString(sql, "")
+	return sql
+}
+
 type msSQLMacroEngine struct {
 	*sqleng.SQLMacroEngineBase
 }
@@ -24,6 +37,10 @@ func newMssqlMacroEngine() sqleng.SQLMacroEngine {
 
 func (m *msSQLMacroEngine) Interpolate(query *backend.DataQuery, timeRange backend.TimeRange,
 	sql string) (string, error) {
+	// Strip SQL comments before macro interpolation so that only macros present
+	// in executable SQL are evaluated.
+	sql = stripSQLComments(sql)
+
 	// TODO: Return any error
 	rExp, _ := regexp.Compile(sExpr)
 	var macroError error
@@ -78,6 +95,9 @@ func (m *msSQLMacroEngine) evaluateMacro(timeRange backend.TimeRange, query *bac
 		if err != nil {
 			return "", fmt.Errorf("error parsing interval %v", args[1])
 		}
+		if interval <= 0 {
+			return "", fmt.Errorf("interval must be positive, got %v", args[1])
+		}
 		if len(args) == 3 {
 			err := sqleng.SetupFillmode(query, interval, args[2])
 			if err != nil {
@@ -112,6 +132,9 @@ func (m *msSQLMacroEngine) evaluateMacro(timeRange backend.TimeRange, query *bac
 		interval, err := gtime.ParseInterval(strings.Trim(args[1], `'`))
 		if err != nil {
 			return "", fmt.Errorf("error parsing interval %v", args[1])
+		}
+		if interval <= 0 {
+			return "", fmt.Errorf("interval must be positive, got %v", args[1])
 		}
 		if len(args) == 3 {
 			err := sqleng.SetupFillmode(query, interval, args[2])

@@ -21,4 +21,11 @@ export enum K8sAnnotations {
   AccessAdmin = 'grafana.com/access/canAdmin',
   /** Annotation key that indicates that the calling user is able to delete this entity */
   AccessDelete = 'grafana.com/access/canDelete',
+  /** Annotation key that indicates that the calling user is able to modify protected fields of this entity */
+  AccessModifyProtected = 'grafana.com/access/canModifyProtected',
 }
+
+/**
+ * Special name that the K8S API expects to see/user for the root route in notification policies
+ */
+export const ROOT_ROUTE_NAME = 'user-defined';

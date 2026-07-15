@@ -39,8 +39,9 @@ type ExternalAlertmanager struct {
 
 	manager *Manager
 
-	sdCancel  context.CancelFunc
-	sdManager *discovery.Manager
+	sanitizeLabelSetFn func(lbls models.LabelSet) labels.Labels
+	sdCancel           context.CancelFunc
+	sdManager          *discovery.Manager
 }
 
 type ExternalAMcfg struct {
@@ -56,6 +57,20 @@ type doFunc func(context.Context, *http.Client, *http.Request) (*http.Response, 
 func WithDoFunc(doFunc doFunc) Option {
 	return func(s *ExternalAlertmanager) {
 		s.manager.opts.Do = doFunc
+	}
+}
+
+// WithUTF8Labels skips sanitizing labels and annotations before sending alerts to the external Alertmanager(s).
+// It assumes UTF-8 label names are supported by the Alertmanager(s).
+func WithUTF8Labels() Option {
+	return func(s *ExternalAlertmanager) {
+		s.sanitizeLabelSetFn = func(lbls models.LabelSet) labels.Labels {
+			ls := make([]labels.Label, 0, len(lbls))
+			for k, v := range lbls {
+				ls = append(ls, labels.Label{Name: k, Value: v})
+			}
+			return labels.New(ls...)
+		}
 	}
 }
 
@@ -89,6 +104,7 @@ func NewExternalAlertmanagerSender(l log.Logger, reg prometheus.Registerer, opts
 		sdCancel: sdCancel,
 	}
 
+	s.sanitizeLabelSetFn = s.sanitizeLabelSet
 	s.manager = NewManager(
 		// Injecting a new registry here means these metrics are not exported.
 		// Once we fix the individual Alertmanager metrics we should fix this scenario too.
@@ -100,7 +116,9 @@ func NewExternalAlertmanagerSender(l log.Logger, reg prometheus.Registerer, opts
 		s.logger.Error("failed to register service discovery metrics", "error", err)
 		return nil, err
 	}
-	s.sdManager = discovery.NewManager(sdCtx, s.logger, prometheus.NewRegistry(), sdMetrics)
+	// Convert s.Logger to slog.Logger using the adapter
+	slogLogger := toSlogLogger(s.logger)
+	s.sdManager = discovery.NewManager(sdCtx, slogLogger, prometheus.NewRegistry(), sdMetrics)
 
 	if s.sdManager == nil {
 		return nil, errors.New("failed to create new discovery manager")
@@ -242,8 +260,8 @@ func buildNotifierConfig(alertmanagers []ExternalAMcfg) (*config.Config, map[str
 func (s *ExternalAlertmanager) alertToNotifierAlert(alert models.PostableAlert) *Alert {
 	// Prometheus alertmanager has stricter rules for annotations/labels than grafana's internal alertmanager, so we sanitize invalid keys.
 	return &Alert{
-		Labels:       s.sanitizeLabelSet(alert.Alert.Labels),
-		Annotations:  s.sanitizeLabelSet(alert.Annotations),
+		Labels:       s.sanitizeLabelSetFn(alert.Alert.Labels),
+		Annotations:  s.sanitizeLabelSetFn(alert.Annotations),
 		StartsAt:     time.Time(alert.StartsAt),
 		EndsAt:       time.Time(alert.EndsAt),
 		GeneratorURL: alert.Alert.GeneratorURL.String(),
@@ -253,7 +271,7 @@ func (s *ExternalAlertmanager) alertToNotifierAlert(alert models.PostableAlert) 
 // sanitizeLabelSet sanitizes all given LabelSet keys according to sanitizeLabelName.
 // If there is a collision as a result of sanitization, a short (6 char) md5 hash of the original key will be added as a suffix.
 func (s *ExternalAlertmanager) sanitizeLabelSet(lbls models.LabelSet) labels.Labels {
-	ls := make(labels.Labels, 0, len(lbls))
+	ls := make([]labels.Label, 0, len(lbls))
 	set := make(map[string]struct{})
 
 	// Must sanitize labels in order otherwise resulting label set can be inconsistent when there are collisions.
@@ -274,7 +292,7 @@ func (s *ExternalAlertmanager) sanitizeLabelSet(lbls models.LabelSet) labels.Lab
 		ls = append(ls, labels.Label{Name: sanitizedLabelName, Value: lbls[k]})
 	}
 
-	return ls
+	return labels.New(ls...)
 }
 
 // sanitizeLabelName will fix a given label name so that it is compatible with prometheus alertmanager character restrictions.

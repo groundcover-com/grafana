@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"math/rand"
@@ -196,6 +197,12 @@ Timestamps will line up evenly on timeStepSeconds (For example, 60 seconds means
 	s.registerScenario(&Scenario{
 		ID:   kinds.TestDataQueryTypeTrace,
 		Name: "Trace",
+	})
+
+	s.registerScenario(&Scenario{
+		ID:      kinds.TestDataQueryTypeErrorWithSource,
+		Name:    "Error with source",
+		handler: s.handleErrorWithSourceScenario,
 	})
 
 	s.queryMux.HandleFunc("", s.handleFallbackScenario)
@@ -591,6 +598,9 @@ func (s *Service) handleLogsScenario(ctx context.Context, req *backend.QueryData
 		}
 
 		lines := model.Lines
+		if lines > 10000 {
+			lines = 10000
+		}
 		includeLevelColumn := model.LevelColumn
 
 		logLevelGenerator := newRandomStringProvider([]string{
@@ -657,6 +667,29 @@ func (s *Service) handleLogsScenario(ctx context.Context, req *backend.QueryData
 
 		respD := resp.Responses[q.RefID]
 		respD.Frames = append(respD.Frames, frame)
+		resp.Responses[q.RefID] = respD
+	}
+
+	return resp, nil
+}
+
+func (s *Service) handleErrorWithSourceScenario(ctx context.Context, req *backend.QueryDataRequest) (*backend.QueryDataResponse, error) {
+	anErr := errors.New("error")
+	resp := backend.NewQueryDataResponse()
+
+	for _, q := range req.Queries {
+		model, err := GetJSONModel(q.JSON)
+		if err != nil {
+			continue
+		}
+
+		respD := resp.Responses[q.RefID]
+		respD.Error = anErr
+
+		if model.ErrorSource == kinds.ErrorSourceDownstream {
+			respD.Error = backend.DownstreamError(respD.Error)
+		}
+
 		resp.Responses[q.RefID] = respD
 	}
 
@@ -764,7 +797,11 @@ func randomWalkTable(query backend.DataQuery, model kinds.TestDataQuery) *data.F
 	var info strings.Builder
 	state := data.EnumItemIndex(0)
 
-	for i := int64(0); i < query.MaxDataPoints && timeWalkerMs < to; i++ {
+	maxDataPoints := query.MaxDataPoints
+	if maxDataPoints > 10000 {
+		maxDataPoints = 10000
+	}
+	for i := int64(0); i < maxDataPoints && timeWalkerMs < to; i++ {
 		delta := rand.Float64() - 0.5
 		walker += delta
 

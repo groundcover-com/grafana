@@ -69,6 +69,10 @@ In Grafana, you have various options to template your alert notification message
    - Template notifications when you want to customize the appearance and information of your notifications.
    - Avoid using notification templates to add extra information to alert instances—use annotations instead.
 
+{{< admonition type="tip" >}}
+For a practical example of templating, refer to our [Getting Started with Templating tutorial](https://grafana.com/tutorials/alerting-get-started-pt4/).
+{{< /admonition  >}}
+
 This diagram illustrates the entire templating process, from querying labels and templating the alert summary and notification to the final alert notification message.
 
 {{< figure src="/media/docs/alerting/how-notification-templates-works.png" max-width="1200px" caption="How templating works" >}}
@@ -85,7 +89,7 @@ In this diagram:
 
 [Annotations](ref:annotations) can be defined in the alert rule to add extra information to alert instances.
 
-When creating an alert rule, Grafana suggests several optional annotations, such as `description`, `summary`, `runbook_url`, `dashboardUId` and `panelId`, which help identify and respond to alerts. You can also create custom annotations.
+When creating an alert rule, Grafana suggests several optional annotations, such as `description`, `summary`, and `runbook_url`, which help identify and respond to alerts. You can also create custom annotations.
 
 Annotations are key-value pairs, and their values can contain a combination of text and template code that is evaluated when the alert fires.
 

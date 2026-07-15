@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"fmt"
@@ -15,6 +16,7 @@ import (
 	"github.com/grafana/grafana/pkg/login/social"
 	"github.com/grafana/grafana/pkg/plugins"
 	"github.com/grafana/grafana/pkg/services/accesscontrol"
+	"github.com/grafana/grafana/pkg/services/authn"
 	contextmodel "github.com/grafana/grafana/pkg/services/contexthandler/model"
 	"github.com/grafana/grafana/pkg/services/datasources"
 	"github.com/grafana/grafana/pkg/services/featuremgmt"
@@ -23,6 +25,7 @@ import (
 	"github.com/grafana/grafana/pkg/services/pluginsintegration/pluginsettings"
 	"github.com/grafana/grafana/pkg/services/pluginsintegration/pluginstore"
 	"github.com/grafana/grafana/pkg/services/secrets/kvstore"
+	dashboardkind "github.com/grafana/grafana/pkg/services/store/kind/dashboard"
 	"github.com/grafana/grafana/pkg/setting"
 	"github.com/grafana/grafana/pkg/tsdb/grafanads"
 	"github.com/grafana/grafana/pkg/util"
@@ -44,8 +47,9 @@ func (hs *HTTPServer) GetFrontendAssets(c *contextmodel.ReqContext) {
 	keys["version"] = fmt.Sprintf("%x", hash.Sum(nil))
 
 	// Plugin configs
-	plugins := []string{}
-	for _, p := range hs.pluginStore.Plugins(c.Req.Context()) {
+	allPlugins := hs.pluginStore.Plugins(c.Req.Context())
+	plugins := make([]string, 0, len(allPlugins))
+	for _, p := range allPlugins {
 		plugins = append(plugins, fmt.Sprintf("%s@%s", p.Name, p.Info.Version))
 	}
 	keys["plugins"] = sortedHash(plugins, hash)
@@ -157,7 +161,7 @@ func (hs *HTTPServer) getFrontendSettings(c *contextmodel.ReqContext) (*dtos.Fro
 		}
 	}
 
-	hideVersion := hs.Cfg.AnonymousHideVersion && !c.IsSignedIn
+	hideVersion := hs.Cfg.Anonymous.HideVersion && !c.IsSignedIn
 	version := setting.BuildVersion
 	commit := setting.BuildCommit
 	commitShort := getShortCommitHash(setting.BuildCommit, 10)
@@ -176,6 +180,10 @@ func (hs *HTTPServer) getFrontendSettings(c *contextmodel.ReqContext) (*dtos.Fro
 	secretsManagerPluginEnabled := kvstore.EvaluateRemoteSecretsPlugin(c.Req.Context(), hs.secretsPluginManager, hs.Cfg) == nil
 	trustedTypesDefaultPolicyEnabled := (hs.Cfg.CSPEnabled && strings.Contains(hs.Cfg.CSPTemplate, "require-trusted-types-for")) || (hs.Cfg.CSPReportOnlyEnabled && strings.Contains(hs.Cfg.CSPReportOnlyTemplate, "require-trusted-types-for"))
 	isCloudMigrationTarget := hs.Features.IsEnabled(c.Req.Context(), featuremgmt.FlagOnPremToCloudMigrations) && hs.Cfg.CloudMigration.IsTarget
+	featureToggles := hs.Features.GetEnabled(c.Req.Context())
+	// this is needed for backwards compatibility with external plugins
+	// we should remove this once we can be sure that no external plugins rely on this
+	featureToggles["topnav"] = true
 
 	frontendSettings := &dtos.FrontendSettingsDTO{
 		DefaultDatasource:                   defaultDS,
@@ -209,6 +217,8 @@ func (hs *HTTPServer) getFrontendSettings(c *contextmodel.ReqContext) (*dtos.Fro
 		RudderstackSdkUrl:                   hs.Cfg.RudderstackSDKURL,
 		RudderstackConfigUrl:                hs.Cfg.RudderstackConfigURL,
 		RudderstackIntegrationsUrl:          hs.Cfg.RudderstackIntegrationsURL,
+		AnalyticsConsoleReporting:           hs.Cfg.FrontendAnalyticsConsoleReporting,
+		DashboardPerformanceMetrics:         hs.Cfg.DashboardPerformanceMetrics,
 		FeedbackLinksEnabled:                hs.Cfg.FeedbackLinksEnabled,
 		ApplicationInsightsConnectionString: hs.Cfg.ApplicationInsightsConnectionString,
 		ApplicationInsightsEndpointUrl:      hs.Cfg.ApplicationInsightsEndpointUrl,
@@ -219,6 +229,8 @@ func (hs *HTTPServer) getFrontendSettings(c *contextmodel.ReqContext) (*dtos.Fro
 		ExternalUserMngInfo:                 hs.Cfg.ExternalUserMngInfo,
 		ExternalUserMngLinkUrl:              hs.Cfg.ExternalUserMngLinkUrl,
 		ExternalUserMngLinkName:             hs.Cfg.ExternalUserMngLinkName,
+		ExternalUserMngAnalytics:            hs.Cfg.ExternalUserMngAnalytics,
+		ExternalUserMngAnalyticsParams:      hs.Cfg.ExternalUserMngAnalyticsParams,
 		ViewersCanEdit:                      hs.Cfg.ViewersCanEdit,
 		AngularSupportEnabled:               hs.Cfg.AngularSupportEnabled,
 		EditorsCanAdmin:                     hs.Cfg.EditorsCanAdmin,
@@ -227,7 +239,7 @@ func (hs *HTTPServer) getFrontendSettings(c *contextmodel.ReqContext) (*dtos.Fro
 		CSPReportOnlyEnabled:                hs.Cfg.CSPReportOnlyEnabled,
 		DateFormats:                         hs.Cfg.DateFormats,
 		SecureSocksDSProxyEnabled:           hs.Cfg.SecureSocksDSProxy.Enabled && hs.Cfg.SecureSocksDSProxy.ShowUI,
-		DisableFrontendSandboxForPlugins:    hs.Cfg.DisableFrontendSandboxForPlugins,
+		EnableFrontendSandboxForPlugins:     hs.Cfg.EnableFrontendSandboxForPlugins,
 		PublicDashboardAccessToken:          c.PublicDashboardAccessToken,
 		PublicDashboardsEnabled:             hs.Cfg.PublicDashboardsEnabled,
 		CloudMigrationIsTarget:              isCloudMigrationTarget,
@@ -238,6 +250,9 @@ func (hs *HTTPServer) getFrontendSettings(c *contextmodel.ReqContext) (*dtos.Fro
 		LocalFileSystemAvailable:            hs.Cfg.LocalFileSystemAvailable,
 		ReportingStaticContext:              hs.Cfg.ReportingStaticContext,
 		ExploreDefaultTimeOffset:            hs.Cfg.ExploreDefaultTimeOffset,
+		ExploreHideLogsDownload:             hs.Cfg.ExploreHideLogsDownload,
+
+		DefaultDatasourceManageAlertsUIToggle: hs.Cfg.DefaultDatasourceManageAlertsUIToggle,
 
 		BuildInfo: dtos.FrontendSettingsBuildInfoDTO{
 			HideVersion:   hideVersion,
@@ -260,9 +275,9 @@ func (hs *HTTPServer) getFrontendSettings(c *contextmodel.ReqContext) (*dtos.Fro
 			EnabledFeatures: hs.License.EnabledFeatures(),
 		},
 
-		FeatureToggles:                   hs.Features.GetEnabled(c.Req.Context()),
-		AnonymousEnabled:                 hs.Cfg.AnonymousEnabled,
-		AnonymousDeviceLimit:             hs.Cfg.AnonymousDeviceLimit,
+		FeatureToggles:                   featureToggles,
+		AnonymousEnabled:                 hs.Cfg.Anonymous.Enabled,
+		AnonymousDeviceLimit:             hs.Cfg.Anonymous.DeviceLimit,
 		RendererAvailable:                hs.RenderService.IsAvailable(c.Req.Context()),
 		RendererVersion:                  hs.RenderService.Version(),
 		RendererDefaultImageWidth:        hs.Cfg.RendererDefaultImageWidth,
@@ -357,6 +372,24 @@ func (hs *HTTPServer) getFrontendSettings(c *contextmodel.ReqContext) (*dtos.Fro
 		BasicAuthStrongPasswordPolicy: hs.Cfg.BasicAuthStrongPasswordPolicy,
 	}
 
+	if hs.Cfg.PasswordlessMagicLinkAuth.Enabled && hs.Features.IsEnabled(c.Req.Context(), featuremgmt.FlagPasswordlessMagicLinkAuthentication) {
+		hasEnabledProviders := hs.samlEnabled() || hs.authnService.IsClientEnabled(authn.ClientLDAP)
+
+		if !hasEnabledProviders {
+			oauthInfos := hs.SocialService.GetOAuthInfoProviders()
+			for _, provider := range oauthInfos {
+				if provider.Enabled {
+					hasEnabledProviders = true
+					break
+				}
+			}
+		}
+
+		if !hasEnabledProviders {
+			frontendSettings.Auth.PasswordlessEnabled = true
+		}
+	}
+
 	if hs.pluginsCDNService != nil && hs.pluginsCDNService.IsEnabled() {
 		cdnBaseURL, err := hs.pluginsCDNService.BaseURL()
 		if err != nil {
@@ -396,6 +429,7 @@ func getShortCommitHash(commitHash string, maxLength int) string {
 	return commitHash
 }
 
+//nolint:gocyclo
 func (hs *HTTPServer) getFSDataSources(c *contextmodel.ReqContext, availablePlugins AvailablePlugins) (map[string]plugins.DataSourceDTO, error) {
 	c, span := hs.injectSpan(c, "api.getFSDataSources")
 	defer span.End()
@@ -410,7 +444,12 @@ func (hs *HTTPServer) getFSDataSources(c *contextmodel.ReqContext, availablePlug
 
 		if c.IsPublicDashboardView() {
 			// If RBAC is enabled, it will filter out all datasources for a public user, so we need to skip it
-			orgDataSources = dataSources
+			// But we can filter to only include datasources actually used by the dashboard
+			filtered, err := hs.publicDashFilterUsedDataSources(c, dataSources)
+			if err != nil {
+				return nil, err
+			}
+			orgDataSources = filtered
 		} else {
 			filtered, err := hs.dsGuardian.New(c.SignedInUser.OrgID, c.SignedInUser).FilterDatasourcesByReadPermissions(dataSources)
 			if err != nil {
@@ -520,7 +559,7 @@ func (hs *HTTPServer) getFSDataSources(c *contextmodel.ReqContext, availablePlug
 			dsDTO.Database = ds.Database
 		}
 
-		if ds.Type == datasources.DS_PROMETHEUS {
+		if ds.Type == datasources.DS_PROMETHEUS || ds.Type == datasources.DS_AMAZON_PROMETHEUS || ds.Type == datasources.DS_AZURE_PROMETHEUS {
 			// add unproxied server URL for link to Prometheus web UI
 			ds.JsonData.Set("directUrl", ds.URL)
 		}
@@ -715,6 +754,7 @@ func (hs *HTTPServer) pluginSettings(ctx context.Context, orgID int64) (map[stri
 			OrgID:         orgID,
 			Enabled:       plugin.AutoEnabled,
 			Pinned:        plugin.AutoEnabled,
+			AutoEnabled:   plugin.AutoEnabled,
 			PluginVersion: plugin.Info.Version,
 		}
 
@@ -760,4 +800,39 @@ func (hs *HTTPServer) getEnabledOAuthProviders() map[string]any {
 		}
 	}
 	return providers
+}
+
+func (hs *HTTPServer) publicDashFilterUsedDataSources(c *contextmodel.ReqContext, allDataSources []*datasources.DataSource) ([]*datasources.DataSource, error) {
+	_, dash, err := hs.publicDashboardsService.FindPublicDashboardAndDashboardByAccessToken(c.Req.Context(), c.PublicDashboardAccessToken)
+	if err != nil {
+		return nil, err
+	}
+
+	payload, err := dash.Data.Encode()
+	if err != nil {
+		return nil, fmt.Errorf("failed to encode dashboard data: %w", err)
+	}
+
+	lookup := dashboardkind.CreateDatasourceLookup([]*dashboardkind.DatasourceQueryResult{
+		// empty values (does not resolve anything)
+	})
+
+	dashSummaryInfo, err := dashboardkind.ReadDashboard(bytes.NewReader(payload), lookup)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse dashboard: %w", err)
+	}
+
+	usedUIDs := make(map[string]struct{}, len(dashSummaryInfo.Datasource))
+	for _, ds := range dashSummaryInfo.Datasource {
+		usedUIDs[ds.UID] = struct{}{}
+	}
+
+	filtered := make([]*datasources.DataSource, 0)
+	for _, ds := range allDataSources {
+		if _, ok := usedUIDs[ds.UID]; ok {
+			filtered = append(filtered, ds)
+		}
+	}
+
+	return filtered, nil
 }

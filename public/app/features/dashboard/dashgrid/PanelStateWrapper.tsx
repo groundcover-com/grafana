@@ -17,6 +17,7 @@ import {
   PanelData,
   PanelPlugin,
   PanelPluginMeta,
+  PluginContextProvider,
   SetPanelAttentionEvent,
   TimeRange,
   toDataFrameDTO,
@@ -46,7 +47,8 @@ import { RenderEvent } from 'app/types/events';
 import { deleteAnnotation, saveAnnotation, updateAnnotation } from '../../annotations/api';
 import { getDashboardQueryRunner } from '../../query/state/DashboardQueryRunner/DashboardQueryRunner';
 import { getTimeSrv, TimeSrv } from '../services/TimeSrv';
-import { DashboardModel, PanelModel } from '../state';
+import { DashboardModel } from '../state/DashboardModel';
+import { PanelModel } from '../state/PanelModel';
 import { getPanelChromeProps } from '../utils/getPanelChromeProps';
 import { loadSnapshotData } from '../utils/loadSnapshotData';
 
@@ -522,27 +524,29 @@ export class PanelStateWrapper extends PureComponent<Props, State> {
     return (
       <>
         <PanelContextProvider value={this.state.context}>
-          <PanelComponent
-            id={panel.id}
-            data={data}
-            title={panel.title}
-            timeRange={timeRange}
-            timeZone={this.props.dashboard.getTimezone()}
-            options={panelOptions}
-            fieldConfig={panel.fieldConfig}
-            transparent={panel.transparent}
-            width={innerWidth}
-            height={innerHeight}
-            renderCounter={renderCounter}
-            replaceVariables={panel.replaceVariables}
-            onOptionsChange={this.onOptionsChange}
-            onFieldConfigChange={this.onFieldConfigChange}
-            onChangeTimeRange={this.onChangeTimeRange}
-            eventBus={dashboard.events}
-          />
-          {config.featureToggles.panelMonitoring && this.state.errorMessage === undefined && (
-            <PanelLoadTimeMonitor panelType={plugin.meta.id} panelId={panel.id} panelTitle={panel.title} />
-          )}
+          <PluginContextProvider meta={plugin.meta}>
+            <PanelComponent
+              id={panel.id}
+              data={data}
+              title={panel.title}
+              timeRange={timeRange}
+              timeZone={this.props.dashboard.getTimezone()}
+              options={panelOptions}
+              fieldConfig={panel.fieldConfig}
+              transparent={panel.transparent}
+              width={innerWidth}
+              height={innerHeight}
+              renderCounter={renderCounter}
+              replaceVariables={panel.replaceVariables}
+              onOptionsChange={this.onOptionsChange}
+              onFieldConfigChange={this.onFieldConfigChange}
+              onChangeTimeRange={this.onChangeTimeRange}
+              eventBus={dashboard.events}
+            />
+            {config.featureToggles.panelMonitoring && this.state.errorMessage === undefined && (
+              <PanelLoadTimeMonitor panelType={plugin.meta.id} panelId={panel.id} panelTitle={panel.title} />
+            )}
+          </PluginContextProvider>
         </PanelContextProvider>
       </>
     );

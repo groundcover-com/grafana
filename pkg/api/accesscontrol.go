@@ -60,7 +60,7 @@ func (hs *HTTPServer) declareFixedRoles() error {
 		Role: ac.RoleDTO{
 			Name:        "fixed:datasources:explorer",
 			DisplayName: "Explorer",
-			Description: "Enable the Explore feature. Data source permissions still apply; you can only query data sources for which you have query permissions.",
+			Description: "Enable the Explore and Drilldown features. Data source permissions still apply; you can only query data sources for which you have query permissions.",
 			Group:       "Data sources",
 			Permissions: []ac.Permission{
 				{
@@ -361,7 +361,7 @@ func (hs *HTTPServer) declareFixedRoles() error {
 					// Need to leave the permissions as they are, so that the seeder doesn't replace permissions when they have been removed from the basic role by the user
 					// Otherwise we could split this into ac.ScopeAnnotationsTypeOrganization and ac.ScopeAnnotationsTypeDashboard scopes and eventually remove the dashboard scope.
 					// https://github.com/grafana/identity-access-team/issues/524
-					{Action: ac.ActionAnnotationsRead, Scope: ac.ScopeAnnotationsAll},
+					{Action: ac.ActionAnnotationsRead, Scope: ac.ScopeAnnotationsTypeOrganization},
 				},
 			},
 			Grants: []string{string(org.RoleViewer)},
@@ -378,9 +378,9 @@ func (hs *HTTPServer) declareFixedRoles() error {
 					// Need to leave the permissions as they are, so that the seeder doesn't replace permissions when they have been removed from the basic role by the user
 					// Otherwise we could split this into ac.ScopeAnnotationsTypeOrganization and ac.ScopeAnnotationsTypeDashboard scopes and eventually remove the dashboard scope.
 					// https://github.com/grafana/identity-access-team/issues/524
-					{Action: ac.ActionAnnotationsCreate, Scope: ac.ScopeAnnotationsAll},
-					{Action: ac.ActionAnnotationsDelete, Scope: ac.ScopeAnnotationsAll},
-					{Action: ac.ActionAnnotationsWrite, Scope: ac.ScopeAnnotationsAll},
+					{Action: ac.ActionAnnotationsCreate, Scope: ac.ScopeAnnotationsTypeOrganization},
+					{Action: ac.ActionAnnotationsDelete, Scope: ac.ScopeAnnotationsTypeOrganization},
+					{Action: ac.ActionAnnotationsWrite, Scope: ac.ScopeAnnotationsTypeOrganization},
 				},
 			},
 			Grants: []string{string(org.RoleEditor)},
@@ -606,6 +606,45 @@ func (hs *HTTPServer) declareFixedRoles() error {
 		Grants: []string{"Admin"},
 	}
 
+	snapshotsCreatorRole := ac.RoleRegistration{
+		Role: ac.RoleDTO{
+			Name:        "fixed:snapshots:creator",
+			DisplayName: "Creator",
+			Description: "Create snapshots",
+			Group:       "Snapshots",
+			Permissions: []ac.Permission{
+				{Action: dashboards.ActionSnapshotsCreate},
+			},
+		},
+		Grants: []string{string(org.RoleEditor)},
+	}
+
+	snapshotsDeleterRole := ac.RoleRegistration{
+		Role: ac.RoleDTO{
+			Name:        "fixed:snapshots:deleter",
+			DisplayName: "Deleter",
+			Description: "Delete snapshots",
+			Group:       "Snapshots",
+			Permissions: []ac.Permission{
+				{Action: dashboards.ActionSnapshotsDelete},
+			},
+		},
+		Grants: []string{string(org.RoleEditor)},
+	}
+
+	snapshotsReaderRole := ac.RoleRegistration{
+		Role: ac.RoleDTO{
+			Name:        "fixed:snapshots:reader",
+			DisplayName: "Reader",
+			Description: "Read snapshots",
+			Group:       "Snapshots",
+			Permissions: []ac.Permission{
+				{Action: dashboards.ActionSnapshotsRead},
+			},
+		},
+		Grants: []string{string(org.RoleViewer)},
+	}
+
 	roles := []ac.RoleRegistration{provisioningWriterRole, datasourcesReaderRole, builtInDatasourceReader, datasourcesWriterRole,
 		datasourcesIdReaderRole, datasourcesCreatorRole, orgReaderRole, orgWriterRole,
 		orgMaintainerRole, teamsCreatorRole, teamsWriterRole, teamsReaderRole, datasourcesExplorerRole,
@@ -613,7 +652,8 @@ func (hs *HTTPServer) declareFixedRoles() error {
 		dashboardsCreatorRole, dashboardsReaderRole, dashboardsWriterRole,
 		foldersCreatorRole, foldersReaderRole, generalFolderReaderRole, foldersWriterRole, apikeyReaderRole, apikeyWriterRole,
 		publicDashboardsWriterRole, featuremgmtReaderRole, featuremgmtWriterRole, libraryPanelsCreatorRole,
-		libraryPanelsReaderRole, libraryPanelsWriterRole, libraryPanelsGeneralReaderRole, libraryPanelsGeneralWriterRole}
+		libraryPanelsReaderRole, libraryPanelsWriterRole, libraryPanelsGeneralReaderRole, libraryPanelsGeneralWriterRole,
+		snapshotsCreatorRole, snapshotsDeleterRole, snapshotsReaderRole}
 
 	if hs.Features.IsEnabled(context.Background(), featuremgmt.FlagAnnotationPermissionUpdate) {
 		allAnnotationsReaderRole := ac.RoleRegistration{

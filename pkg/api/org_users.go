@@ -161,6 +161,7 @@ func (hs *HTTPServer) GetOrgUsersForCurrentOrgLookup(c *contextmodel.ReqContext)
 
 	for _, u := range orgUsersResult.OrgUsers {
 		result = append(result, &dtos.UserLookupDTO{
+			UID:       u.UID,
 			UserID:    u.UserID,
 			Login:     u.Login,
 			AvatarURL: u.AvatarURL,
@@ -539,6 +540,16 @@ type AddOrgUserParams struct {
 	// in:path
 	// required:true
 	OrgID int64 `json:"org_id"`
+}
+
+// swagger:parameters getOrgUsersForCurrentOrg
+type GetOrgUsersForCurrentOrgParams struct {
+	// in:query
+	// required:false
+	Query string `json:"query"`
+	// in:query
+	// required:false
+	Limit int `json:"limit"`
 }
 
 // swagger:parameters getOrgUsersForCurrentOrgLookup

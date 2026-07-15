@@ -6,7 +6,7 @@ import { useGrafana } from 'app/core/context/GrafanaContext';
 import { t } from 'app/core/internationalization';
 
 import { Branding } from '../../Branding/Branding';
-import { OrganizationSwitcher } from '../OrganizationSwitcher/OrganizationSwitcher';
+// import { OrganizationSwitcher } from '../OrganizationSwitcher/OrganizationSwitcher';
 import { TOP_BAR_LEVEL_HEIGHT } from '../types';
 
 export interface Props {
@@ -14,6 +14,9 @@ export interface Props {
   handleDockedMenu: () => void;
   onClose: () => void;
 }
+
+export const DOCK_MENU_BUTTON_ID = 'dock-menu-button';
+export const MEGA_MENU_HEADER_TOGGLE_ID = 'mega-menu-header-toggle';
 
 export function MegaMenuHeader({ handleMegaMenu, handleDockedMenu, onClose }: Props) {
   const theme = useTheme2();
@@ -24,13 +27,18 @@ export function MegaMenuHeader({ handleMegaMenu, handleDockedMenu, onClose }: Pr
   return (
     <div className={styles.header}>
       <Stack alignItems="center" minWidth={0} gap={0.25}>
-        <ToolbarButton narrow onClick={handleMegaMenu} tooltip={t('navigation.megamenu.close', 'Close menu')}>
+        <ToolbarButton
+          narrow
+          id={MEGA_MENU_HEADER_TOGGLE_ID}
+          onClick={handleMegaMenu}
+          tooltip={t('navigation.megamenu.close', 'Close menu')}
+        >
           <Branding.MenuLogo className={styles.img} />
         </ToolbarButton>
-        <OrganizationSwitcher />
+        {/* <OrganizationSwitcher /> */}
       </Stack>
       <IconButton
-        id="dock-menu-button"
+        id={DOCK_MENU_BUTTON_ID}
         className={styles.dockMenuButton}
         tooltip={
           state.megaMenuDocked

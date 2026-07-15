@@ -72,6 +72,7 @@ type DiscoveryBase struct {
 type RuleDiscovery struct {
 	// required: true
 	RuleGroups []RuleGroup      `json:"groups"`
+	NextToken  string           `json:"groupNextToken,omitempty"`
 	Totals     map[string]int64 `json:"totals,omitempty"`
 }
 
@@ -88,6 +89,8 @@ type RuleGroup struct {
 	Name string `json:"name"`
 	// required: true
 	File string `json:"file"`
+	// required: true
+	FolderUID string `json:"folderUid"`
 	// In order to preserve rule ordering, while exposing type (alerting or recording)
 	// specific properties, both alerting and recording rules are exposed in the
 	// same array.
@@ -152,7 +155,7 @@ type AlertingRule struct {
 	Query    string  `json:"query,omitempty"`
 	Duration float64 `json:"duration,omitempty"`
 	// required: true
-	Annotations promlabels.Labels `json:"annotations,omitempty"`
+	Annotations promlabels.Labels `json:"annotations,omitzero"`
 	// required: true
 	ActiveAt       *time.Time       `json:"activeAt,omitempty"`
 	Alerts         []Alert          `json:"alerts,omitempty"`
@@ -165,10 +168,14 @@ type AlertingRule struct {
 // swagger:model
 type Rule struct {
 	// required: true
+	UID string `json:"uid"`
+	// required: true
 	Name string `json:"name"`
 	// required: true
+	FolderUID string `json:"folderUid"`
+	// required: true
 	Query  string            `json:"query"`
-	Labels promlabels.Labels `json:"labels,omitempty"`
+	Labels promlabels.Labels `json:"labels,omitzero"`
 	// required: true
 	Health    string `json:"health"`
 	LastError string `json:"lastError,omitempty"`

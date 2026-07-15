@@ -1,3 +1,5 @@
+import { ValidationRule } from 'react-hook-form';
+
 import { SelectableValue } from '@grafana/data';
 import { IconName } from '@grafana/ui';
 
@@ -74,7 +76,8 @@ export type CloudNotifierType =
   | 'telegram'
   | 'sns'
   | 'discord'
-  | 'msteams';
+  | 'msteams'
+  | 'jira';
 
 export type NotifierType = GrafanaNotifierType | CloudNotifierType;
 export interface NotifierDTO<T = NotifierType> {
@@ -140,6 +143,13 @@ export interface NotificationChannelOption {
   propertyName: string;
   required: boolean;
   secure: boolean;
+  secureFieldKey?: string;
+  /**
+   * protected indicates that only administrators or users with
+   * "alert.notifications.receivers.protected:write" permission
+   * are allowed to update this field
+   * */
+  protected?: boolean;
   selectOptions?: Array<SelectableValue<string>> | null;
   defaultValue?: SelectableValue<string>;
   showWhen: { field: string; is: string | boolean };
@@ -219,4 +229,8 @@ export interface AnnotationItemDTO {
   email: string;
   avatarUrl: string;
   data: any;
+}
+export interface OptionMeta {
+  required?: string | ValidationRule<boolean>;
+  readOnly?: boolean;
 }

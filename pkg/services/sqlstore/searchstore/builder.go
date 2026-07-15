@@ -60,6 +60,7 @@ func (b *Builder) buildSelect() {
 	b.sql.WriteString(
 		`SELECT
 			dashboard.id,
+			dashboard.org_id,
 			dashboard.uid,
 			dashboard.title,
 			dashboard.slug,
@@ -148,7 +149,12 @@ func (b *Builder) applyFilters() (ordering string) {
 		}
 	}
 
-	b.sql.WriteString("SELECT dashboard.id FROM dashboard")
+	forceIndex := ""
+	if b.Dialect.DriverName() == migrator.MySQL {
+		forceIndex = " FORCE INDEX (IDX_dashboard_title) "
+	}
+
+	b.sql.WriteString(fmt.Sprintf("SELECT dashboard.id FROM dashboard %s", forceIndex))
 	b.sql.WriteString(strings.Join(joins, ""))
 
 	if len(wheres) > 0 {
@@ -181,7 +187,7 @@ func (b *Builder) applyFilters() (ordering string) {
 		b.params = append(b.params, groupParams...)
 	}
 
-	orderByCols := []string{}
+	orderByCols := make([]string, 0, len(orders))
 	for _, o := range orders {
 		orderByCols = append(orderByCols, b.Dialect.OrderBy(o))
 	}
