@@ -14,6 +14,8 @@ import (
 	"time"
 
 	"github.com/benbjohnson/clock"
+	"github.com/prometheus/common/model"
+
 	"github.com/grafana/grafana-plugin-sdk-go/data"
 	"go.opentelemetry.io/otel/trace"
 	"gopkg.in/yaml.v3"
@@ -47,6 +49,9 @@ const (
 )
 
 const gcMonitorYamlAnnotation = "_gc_monitor_yaml"
+
+// gcAwsCurQueryType is the one multi-token gcQL data type, so a naive "_" split misroutes it.
+const gcAwsCurQueryType = "aws_cur"
 
 var annotationsToDelete = map[string]struct{}{
 	gcMonitorYamlAnnotation: {},
@@ -551,9 +556,11 @@ func extractGCLookbehind(yamlContent string, logger log.Logger) (string, string)
 
 	var maxRollup, maxDelay time.Duration
 	for _, query := range parsed.Model.Queries {
-		// gcql carries instantRollup, prometheus carries rollup.time; a monitor uses one.
-		if d, ok := parseGCDuration(query.InstantRollup); ok && d > maxRollup {
-			maxRollup = d
+		// gcQL carries instantRollup, Prometheus carries rollup.time; a monitor uses one.
+		if instantRollupWidensWindow(query.DataType) {
+			if d, ok := parseGCDuration(query.InstantRollup); ok && d > maxRollup {
+				maxRollup = d
+			}
 		}
 		if d, ok := parseGCDuration(query.Rollup.Time); ok && d > maxRollup {
 			maxRollup = d
@@ -581,34 +588,69 @@ func extractGCLookbehind(yamlContent string, logger log.Logger) (string, string)
 	return lookbehind.String(), rollup
 }
 
-// parseGCDuration accepts the duration forms the monitor YAML uses: a Go duration ("5m") and
-// the legacy ClickHouse instantRollup form ("5 minutes").
+// gcLegacyIntervalRegexp matches the legacy ClickHouse instantRollup form ("5 minutes"),
+// mirroring the unit set the monitor model validates against.
+var gcLegacyIntervalRegexp = regexp.MustCompile(`(?i)^(\d+)\s+(second|minute|hour|day|week|month|quarter|year)s?$`)
+
+var gcLegacyIntervalUnits = map[string]time.Duration{
+	"second":  time.Second,
+	"minute":  time.Minute,
+	"hour":    time.Hour,
+	"day":     24 * time.Hour,
+	"week":    7 * 24 * time.Hour,
+	"month":   30 * 24 * time.Hour,
+	"quarter": 91 * 24 * time.Hour,
+	"year":    365 * 24 * time.Hour,
+}
+
+// parseGCDuration accepts every duration form the monitor YAML can hold. The annotation is
+// either the YAML the user submitted or a re-marshal of the model, so a single field may
+// appear as a Prometheus duration ("1d", "2w" — which time.ParseDuration rejects), a Go
+// duration ("24h0m0s", "90s"), or the legacy ClickHouse interval ("5 minutes").
 func parseGCDuration(value string) (time.Duration, bool) {
 	value = strings.TrimSpace(value)
 	if value == "" {
 		return 0, false
 	}
+	// Prometheus first: it is the only one of the three that understands d/w, and
+	// model.Duration.String() emits them.
+	if d, err := model.ParseDuration(value); err == nil && d > 0 {
+		return time.Duration(d), true
+	}
 	if d, err := time.ParseDuration(value); err == nil && d > 0 {
 		return d, true
 	}
-	fields := strings.Fields(value)
-	if len(fields) != 2 {
-		return 0, false
+	if m := gcLegacyIntervalRegexp.FindStringSubmatch(value); m != nil {
+		n, err := strconv.Atoi(m[1])
+		if err != nil || n <= 0 {
+			return 0, false
+		}
+		if unit, ok := gcLegacyIntervalUnits[strings.ToLower(m[2])]; ok {
+			return time.Duration(n) * unit, true
+		}
 	}
-	n, err := strconv.Atoi(fields[0])
-	if err != nil || n <= 0 {
-		return 0, false
+	return 0, false
+}
+
+// instantRollupWidensWindow reports whether a query's instantRollup actually widens the
+// window it scans. Only gcQL queries carry one, and entities is a timeless current-state view
+// with no time filter — so a monitor of either other kind may carry a value the query builder
+// ignores, and counting it would widen the link for a window that was never scanned.
+func instantRollupWidensWindow(dataType string) bool {
+	if dataType == "" {
+		return false
 	}
-	unit, ok := map[string]time.Duration{
-		"second": time.Second, "seconds": time.Second,
-		"minute": time.Minute, "minutes": time.Minute,
-		"hour": time.Hour, "hours": time.Hour,
-		"day": 24 * time.Hour, "days": 24 * time.Hour,
-	}[strings.ToLower(fields[1])]
-	if !ok {
-		return 0, false
+	prefix := dataType
+	if prefix != gcAwsCurQueryType {
+		prefix = strings.Split(dataType, "_")[0]
 	}
-	return time.Duration(n) * unit, true
+	switch prefix {
+	case "traces", "logs", "events", "rum", "issues", "apm", "ingestion", gcAwsCurQueryType:
+		return true
+	default:
+		// "entities", and anything not a gcQL data type.
+		return false
+	}
 }
 
 func calculateFingerprint(labels data.Labels) string {
