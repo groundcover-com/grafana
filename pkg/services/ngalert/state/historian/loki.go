@@ -14,8 +14,6 @@ import (
 	"time"
 
 	"github.com/benbjohnson/clock"
-	"github.com/prometheus/common/model"
-
 	"github.com/grafana/grafana-plugin-sdk-go/data"
 	"go.opentelemetry.io/otel/trace"
 	"gopkg.in/yaml.v3"
@@ -362,10 +360,15 @@ func StatesToStream(rule history_model.RuleMeta, states []state.StateTransition,
 		// Derived labels are added after labelMap is snapshotted above, so they never enter
 		// the fingerprint — it keys dispatch-center's notification state, and moving it would
 		// orphan every open alert cycle.
-		if lookbehind, rollup := extractGCLookbehind(state.Annotations[gcMonitorYamlAnnotation], logger); lookbehind != "" {
-			sanitizedLabels[models.GCLookbehindLabel] = lookbehind
-			if rollup != "" {
-				sanitizedLabels[models.GCRollupLabel] = rollup
+		timing := extractGCMonitorTiming(state.Annotations[gcMonitorYamlAnnotation], logger)
+		for key, value := range map[string]string{
+			models.GCRollupLabel:       timing.Rollup,
+			models.GCEvalIntervalLabel: timing.Interval,
+			models.GCPendingForLabel:   timing.PendingFor,
+			models.GCEvalDelayLabel:    timing.DelaySeconds,
+		} {
+			if value != "" {
+				sanitizedLabels[key] = value
 			}
 		}
 		fingerprint := calculateFingerprint(labelMap)
@@ -530,113 +533,58 @@ func extractGCQuery(yamlContent string, logger log.Logger) string {
 	return string(queryJSON)
 }
 
-// extractGCLookbehind parses the _gc_monitor_yaml annotation and returns how far before a
-// firing that firing's evidence lies, plus the widest rollup on its own.
+// gcMonitorTiming carries the monitor's evaluation configuration verbatim, as strings, so the
+// consumer parses with its own duration helpers rather than this fork reimplementing them.
+type gcMonitorTiming struct {
+	Rollup       string
+	Interval     string
+	PendingFor   string
+	DelaySeconds string
+}
+
+// extractGCMonitorTiming pulls the evaluation configuration out of the _gc_monitor_yaml
+// annotation. Values are copied as written — no parsing, no arithmetic, no unit conversion —
+// because the consumer already has helpers for every form these fields can take.
 //
-// The lookbehind is the sum of four independent shifts: the rollup the query aggregated over,
-// the pendingFor the condition had to hold before the state flipped, the evaluationDelay the
-// window is deliberately moved back by, and one evaluation interval — the firing timestamp is
-// the evaluation that *noticed*, and the condition may have become true up to one interval
-// earlier. The rollup is returned separately because a consumer bounding how wide a window may
-// grow needs to scale it to the series' own resolution, which the summed value cannot express.
-//
-// Both are returned as Go duration strings, empty when the monitor configures none of it.
-// Parse failures return empty rather than an error: these values decorate a state row and must
-// never fail the state write.
-func extractGCLookbehind(yamlContent string, logger log.Logger) (string, string) {
+// The rollup is read from the query _gc_query projects: rollup.time for Prometheus, otherwise
+// instantRollup, which only widens the scanned window for gcQL queries. Entities is a timeless
+// current-state view with no time filter, so its instantRollup is ignored by the query builder
+// and must not be reported as a rollup here either.
+func extractGCMonitorTiming(yamlContent string, logger log.Logger) gcMonitorTiming {
 	if yamlContent == "" {
-		return "", ""
+		return gcMonitorTiming{}
 	}
 
 	var parsed gcMonitorYaml
 	if err := yaml.Unmarshal([]byte(html.UnescapeString(yamlContent)), &parsed); err != nil {
-		logger.Debug("Failed to parse _gc_monitor_yaml annotation for lookbehind", "error", err)
-		return "", ""
+		logger.Debug("Failed to parse _gc_monitor_yaml annotation for monitor timing", "error", err)
+		return gcMonitorTiming{}
 	}
 
-	var maxRollup, maxDelay time.Duration
-	for _, query := range parsed.Model.Queries {
-		// gcQL carries instantRollup, Prometheus carries rollup.time; a monitor uses one.
-		if instantRollupWidensWindow(query.DataType) {
-			if d, ok := parseGCDuration(query.InstantRollup); ok && d > maxRollup {
-				maxRollup = d
-			}
-		}
-		if d, ok := parseGCDuration(query.Rollup.Time); ok && d > maxRollup {
-			maxRollup = d
-		}
-		if delay := time.Duration(query.EvaluationDelay) * time.Second; delay > maxDelay {
-			maxDelay = delay
-		}
+	timing := gcMonitorTiming{
+		Interval:   parsed.EvaluationInterval.Interval,
+		PendingFor: parsed.EvaluationInterval.PendingFor,
+	}
+	if len(parsed.Model.Queries) == 0 {
+		return timing
 	}
 
-	lookbehind := maxRollup + maxDelay
-	if d, ok := parseGCDuration(parsed.EvaluationInterval.Interval); ok {
-		lookbehind += d
+	query := parsed.Model.Queries[0]
+	switch {
+	case query.Rollup.Time != "":
+		timing.Rollup = query.Rollup.Time
+	case gcInstantRollupWidensWindow(query.DataType):
+		timing.Rollup = query.InstantRollup
 	}
-	if d, ok := parseGCDuration(parsed.EvaluationInterval.PendingFor); ok {
-		lookbehind += d
+	if query.EvaluationDelay > 0 {
+		timing.DelaySeconds = strconv.Itoa(query.EvaluationDelay) + "s"
 	}
-
-	if lookbehind == 0 {
-		return "", ""
-	}
-	rollup := ""
-	if maxRollup > 0 {
-		rollup = maxRollup.String()
-	}
-	return lookbehind.String(), rollup
+	return timing
 }
 
-// gcLegacyIntervalRegexp matches the legacy ClickHouse instantRollup form ("5 minutes"),
-// mirroring the unit set the monitor model validates against.
-var gcLegacyIntervalRegexp = regexp.MustCompile(`(?i)^(\d+)\s+(second|minute|hour|day|week|month|quarter|year)s?$`)
-
-var gcLegacyIntervalUnits = map[string]time.Duration{
-	"second":  time.Second,
-	"minute":  time.Minute,
-	"hour":    time.Hour,
-	"day":     24 * time.Hour,
-	"week":    7 * 24 * time.Hour,
-	"month":   30 * 24 * time.Hour,
-	"quarter": 91 * 24 * time.Hour,
-	"year":    365 * 24 * time.Hour,
-}
-
-// parseGCDuration accepts every duration form the monitor YAML can hold. The annotation is
-// either the YAML the user submitted or a re-marshal of the model, so a single field may
-// appear as a Prometheus duration ("1d", "2w" — which time.ParseDuration rejects), a Go
-// duration ("24h0m0s", "90s"), or the legacy ClickHouse interval ("5 minutes").
-func parseGCDuration(value string) (time.Duration, bool) {
-	value = strings.TrimSpace(value)
-	if value == "" {
-		return 0, false
-	}
-	// Prometheus first: it is the only one of the three that understands d/w, and
-	// model.Duration.String() emits them.
-	if d, err := model.ParseDuration(value); err == nil && d > 0 {
-		return time.Duration(d), true
-	}
-	if d, err := time.ParseDuration(value); err == nil && d > 0 {
-		return d, true
-	}
-	if m := gcLegacyIntervalRegexp.FindStringSubmatch(value); m != nil {
-		n, err := strconv.Atoi(m[1])
-		if err != nil || n <= 0 {
-			return 0, false
-		}
-		if unit, ok := gcLegacyIntervalUnits[strings.ToLower(m[2])]; ok {
-			return time.Duration(n) * unit, true
-		}
-	}
-	return 0, false
-}
-
-// instantRollupWidensWindow reports whether a query's instantRollup actually widens the
-// window it scans. Only gcQL queries carry one, and entities is a timeless current-state view
-// with no time filter — so a monitor of either other kind may carry a value the query builder
-// ignores, and counting it would widen the link for a window that was never scanned.
-func instantRollupWidensWindow(dataType string) bool {
+// gcInstantRollupWidensWindow reports whether a query's instantRollup widens the window it
+// scans. Only gcQL queries carry one, and entities is timeless.
+func gcInstantRollupWidensWindow(dataType string) bool {
 	if dataType == "" {
 		return false
 	}
@@ -648,7 +596,6 @@ func instantRollupWidensWindow(dataType string) bool {
 	case "traces", "logs", "events", "rum", "issues", "apm", "ingestion", gcAwsCurQueryType:
 		return true
 	default:
-		// "entities", and anything not a gcQL data type.
 		return false
 	}
 }

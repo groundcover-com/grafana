@@ -167,14 +167,13 @@ const (
 	// GCQueryLabel is the label key for the alert query.
 	GCQueryLabel = "_gc_query"
 
-	// GCLookbehindLabel is how far before a firing that firing's evidence lies — the rollup,
-	// pendingFor, evaluationDelay and one evaluation interval, summed. Consumers use it to
-	// open a link to the issue before the data the alert looked at rather than after it.
-	GCLookbehindLabel = "_gc_lookbehind"
-
-	// GCRollupLabel is the widest rollup across the monitor's queries, carried separately from
-	// GCLookbehindLabel so a consumer can scale a window bound to the series' own resolution.
-	GCRollupLabel = "_gc_rollup"
+	// The monitor's evaluation configuration, copied verbatim from its _gc_monitor_yaml
+	// annotation so a consumer can work out how far before a firing that firing's evidence
+	// lies. Durations are as written in the monitor; the delay is in seconds.
+	GCRollupLabel       = "_gc_rollup"
+	GCEvalIntervalLabel = "_gc_eval_interval"
+	GCPendingForLabel   = "_gc_pending_for"
+	GCEvalDelayLabel    = "_gc_eval_delay"
 
 	// GCThresholdInputQueryKey is the values map key for the threshold input query value.
 	GCThresholdInputQueryKey = "threshold_input_query"
