@@ -303,6 +303,7 @@ func StatesToStream(rule history_model.RuleMeta, states []state.StateTransition,
 	labels[FolderUIDLabel] = fmt.Sprint(rule.NamespaceUID)
 
 	samples := make([]Sample, 0, len(states))
+	var monitorAnnotation gcMonitorAnnotationMemo
 	for _, state := range states {
 		if !shouldRecord(state) && !logAll {
 			continue
@@ -355,17 +356,17 @@ func StatesToStream(rule history_model.RuleMeta, states []state.StateTransition,
 		labelMap := make(map[string]string, len(sanitizedLabels))
 		maps.Copy(labelMap, sanitizedLabels)
 
-		gcQuery := extractGCQuery(state.Annotations[gcMonitorYamlAnnotation], logger)
+		derived := monitorAnnotation.get(state.Annotations[gcMonitorYamlAnnotation], logger)
+		gcQuery := derived.Query
 		sanitizedLabels[models.GCQueryLabel] = gcQuery
 		// Derived labels are added after labelMap is snapshotted above, so they never enter
 		// the fingerprint — it keys dispatch-center's notification state, and moving it would
 		// orphan every open alert cycle.
-		timing := extractGCMonitorTiming(state.Annotations[gcMonitorYamlAnnotation], logger)
 		for key, value := range map[string]string{
-			models.GCRollupLabel:       timing.Rollup,
-			models.GCEvalIntervalLabel: timing.Interval,
-			models.GCPendingForLabel:   timing.PendingFor,
-			models.GCEvalDelayLabel:    timing.DelaySeconds,
+			models.GCRollupLabel:       derived.Timing.Rollup,
+			models.GCEvalIntervalLabel: derived.Timing.Interval,
+			models.GCPendingForLabel:   derived.Timing.PendingFor,
+			models.GCEvalDelayLabel:    derived.Timing.DelaySeconds,
 		} {
 			if value != "" {
 				sanitizedLabels[key] = value
@@ -457,6 +458,49 @@ type gcMonitorQueryRaw struct {
 	} `yaml:"rollup"`
 }
 
+// parseGCMonitorYaml unmarshals the _gc_monitor_yaml annotation. Failures are logged and
+// reported as not-ok: these values decorate a state row and must never fail the state write.
+func parseGCMonitorYaml(yamlContent string, logger log.Logger) (gcMonitorYaml, bool) {
+	if yamlContent == "" {
+		return gcMonitorYaml{}, false
+	}
+	var parsed gcMonitorYaml
+	if err := yaml.Unmarshal([]byte(html.UnescapeString(yamlContent)), &parsed); err != nil {
+		logger.Debug("Failed to parse _gc_monitor_yaml annotation", "error", err)
+		return gcMonitorYaml{}, false
+	}
+	return parsed, true
+}
+
+// gcMonitorAnnotation holds everything derived from one _gc_monitor_yaml annotation.
+type gcMonitorAnnotation struct {
+	Query  string
+	Timing gcMonitorTiming
+}
+
+// gcMonitorAnnotationMemo parses an annotation once and reuses it for every state that carries
+// the same one. The annotation is rule-level, so a batch of states shares a single value, while
+// the loop over them is per series — and unmarshalling a monitor costs on the order of 100µs
+// and 30KB, which a rule with thousands of series would pay on every evaluation.
+type gcMonitorAnnotationMemo struct {
+	raw    string
+	cached gcMonitorAnnotation
+	filled bool
+}
+
+func (m *gcMonitorAnnotationMemo) get(yamlContent string, logger log.Logger) gcMonitorAnnotation {
+	if m.filled && m.raw == yamlContent {
+		return m.cached
+	}
+	derived := gcMonitorAnnotation{}
+	if parsed, ok := parseGCMonitorYaml(yamlContent, logger); ok {
+		derived.Query = gcQueryFrom(parsed, logger)
+		derived.Timing = gcTimingFrom(parsed)
+	}
+	m.raw, m.cached, m.filled = yamlContent, derived, true
+	return derived
+}
+
 type gcMonitorYaml struct {
 	Model struct {
 		Queries []gcMonitorQueryRaw `yaml:"queries"`
@@ -491,18 +535,14 @@ type gcMonitorYaml struct {
 //	      function: avg
 //	      time: 5m
 func extractGCQuery(yamlContent string, logger log.Logger) string {
-	if yamlContent == "" {
+	parsed, ok := parseGCMonitorYaml(yamlContent, logger)
+	if !ok {
 		return ""
 	}
+	return gcQueryFrom(parsed, logger)
+}
 
-	cleanYaml := html.UnescapeString(yamlContent)
-
-	var parsed gcMonitorYaml
-	if err := yaml.Unmarshal([]byte(cleanYaml), &parsed); err != nil {
-		logger.Debug("Failed to parse _gc_monitor_yaml annotation", "error", err)
-		return ""
-	}
-
+func gcQueryFrom(parsed gcMonitorYaml, logger log.Logger) string {
 	if len(parsed.Model.Queries) == 0 {
 		logger.Debug("No queries found in _gc_monitor_yaml annotation")
 		return ""
@@ -551,16 +591,14 @@ type gcMonitorTiming struct {
 // current-state view with no time filter, so its instantRollup is ignored by the query builder
 // and must not be reported as a rollup here either.
 func extractGCMonitorTiming(yamlContent string, logger log.Logger) gcMonitorTiming {
-	if yamlContent == "" {
+	parsed, ok := parseGCMonitorYaml(yamlContent, logger)
+	if !ok {
 		return gcMonitorTiming{}
 	}
+	return gcTimingFrom(parsed)
+}
 
-	var parsed gcMonitorYaml
-	if err := yaml.Unmarshal([]byte(html.UnescapeString(yamlContent)), &parsed); err != nil {
-		logger.Debug("Failed to parse _gc_monitor_yaml annotation for monitor timing", "error", err)
-		return gcMonitorTiming{}
-	}
-
+func gcTimingFrom(parsed gcMonitorYaml) gcMonitorTiming {
 	timing := gcMonitorTiming{
 		Interval:   parsed.EvaluationInterval.Interval,
 		PendingFor: parsed.EvaluationInterval.PendingFor,
