@@ -354,6 +354,15 @@ func StatesToStream(rule history_model.RuleMeta, states []state.StateTransition,
 
 		gcQuery := extractGCQuery(state.Annotations[gcMonitorYamlAnnotation], logger)
 		sanitizedLabels[models.GCQueryLabel] = gcQuery
+		// Derived labels are added after labelMap is snapshotted above, so they never enter
+		// the fingerprint — it keys dispatch-center's notification state, and moving it would
+		// orphan every open alert cycle.
+		if lookbehind, rollup := extractGCLookbehind(state.Annotations[gcMonitorYamlAnnotation], logger); lookbehind != "" {
+			sanitizedLabels[models.GCLookbehindLabel] = lookbehind
+			if rollup != "" {
+				sanitizedLabels[models.GCRollupLabel] = rollup
+			}
+		}
 		fingerprint := calculateFingerprint(labelMap)
 
 		parsedSummary := expandSummaryTemplate(
@@ -424,6 +433,10 @@ type gcMonitorQueryOutput struct {
 type gcMonitorQueryRaw struct {
 	Expression string `yaml:"expression"`
 
+	// EvaluationDelay shifts the evaluated window back by this many seconds, for sources
+	// that backfill recent data.
+	EvaluationDelay int `yaml:"evaluationDelay"`
+
 	// gcql format fields
 	DataType      string `yaml:"dataType"`
 	InstantRollup string `yaml:"instantRollup"`
@@ -440,6 +453,10 @@ type gcMonitorYaml struct {
 	Model struct {
 		Queries []gcMonitorQueryRaw `yaml:"queries"`
 	} `yaml:"model"`
+	EvaluationInterval struct {
+		Interval   string `yaml:"interval"`
+		PendingFor string `yaml:"pendingFor"`
+	} `yaml:"evaluationInterval"`
 }
 
 // extractGCQuery parses the _gc_monitor_yaml annotation and extracts model.queries[0] as a JSON string.
@@ -506,6 +523,92 @@ func extractGCQuery(yamlContent string, logger log.Logger) string {
 	}
 
 	return string(queryJSON)
+}
+
+// extractGCLookbehind parses the _gc_monitor_yaml annotation and returns how far before a
+// firing that firing's evidence lies, plus the widest rollup on its own.
+//
+// The lookbehind is the sum of four independent shifts: the rollup the query aggregated over,
+// the pendingFor the condition had to hold before the state flipped, the evaluationDelay the
+// window is deliberately moved back by, and one evaluation interval — the firing timestamp is
+// the evaluation that *noticed*, and the condition may have become true up to one interval
+// earlier. The rollup is returned separately because a consumer bounding how wide a window may
+// grow needs to scale it to the series' own resolution, which the summed value cannot express.
+//
+// Both are returned as Go duration strings, empty when the monitor configures none of it.
+// Parse failures return empty rather than an error: these values decorate a state row and must
+// never fail the state write.
+func extractGCLookbehind(yamlContent string, logger log.Logger) (string, string) {
+	if yamlContent == "" {
+		return "", ""
+	}
+
+	var parsed gcMonitorYaml
+	if err := yaml.Unmarshal([]byte(html.UnescapeString(yamlContent)), &parsed); err != nil {
+		logger.Debug("Failed to parse _gc_monitor_yaml annotation for lookbehind", "error", err)
+		return "", ""
+	}
+
+	var maxRollup, maxDelay time.Duration
+	for _, query := range parsed.Model.Queries {
+		// gcql carries instantRollup, prometheus carries rollup.time; a monitor uses one.
+		if d, ok := parseGCDuration(query.InstantRollup); ok && d > maxRollup {
+			maxRollup = d
+		}
+		if d, ok := parseGCDuration(query.Rollup.Time); ok && d > maxRollup {
+			maxRollup = d
+		}
+		if delay := time.Duration(query.EvaluationDelay) * time.Second; delay > maxDelay {
+			maxDelay = delay
+		}
+	}
+
+	lookbehind := maxRollup + maxDelay
+	if d, ok := parseGCDuration(parsed.EvaluationInterval.Interval); ok {
+		lookbehind += d
+	}
+	if d, ok := parseGCDuration(parsed.EvaluationInterval.PendingFor); ok {
+		lookbehind += d
+	}
+
+	if lookbehind == 0 {
+		return "", ""
+	}
+	rollup := ""
+	if maxRollup > 0 {
+		rollup = maxRollup.String()
+	}
+	return lookbehind.String(), rollup
+}
+
+// parseGCDuration accepts the duration forms the monitor YAML uses: a Go duration ("5m") and
+// the legacy ClickHouse instantRollup form ("5 minutes").
+func parseGCDuration(value string) (time.Duration, bool) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return 0, false
+	}
+	if d, err := time.ParseDuration(value); err == nil && d > 0 {
+		return d, true
+	}
+	fields := strings.Fields(value)
+	if len(fields) != 2 {
+		return 0, false
+	}
+	n, err := strconv.Atoi(fields[0])
+	if err != nil || n <= 0 {
+		return 0, false
+	}
+	unit, ok := map[string]time.Duration{
+		"second": time.Second, "seconds": time.Second,
+		"minute": time.Minute, "minutes": time.Minute,
+		"hour": time.Hour, "hours": time.Hour,
+		"day": 24 * time.Hour, "days": 24 * time.Hour,
+	}[strings.ToLower(fields[1])]
+	if !ok {
+		return 0, false
+	}
+	return time.Duration(n) * unit, true
 }
 
 func calculateFingerprint(labels data.Labels) string {
