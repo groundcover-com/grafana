@@ -85,6 +85,22 @@ model:
 			want: gcMonitorTiming{Interval: "1m"},
 		},
 		{
+			// The same timelessness makes evaluationDelay a no-op: the router documents the
+			// delay as harmless on an entities query because no time filter is built to shift.
+			// Reporting it would push the issue link's start back by up to the 7-day maximum.
+			name: "evaluationDelay on a timeless entities query is not a delay",
+			yaml: `
+evaluationInterval:
+  interval: 1m
+model:
+  queries:
+  - name: q
+    dataType: entities
+    evaluationDelay: 3600
+`,
+			want: gcMonitorTiming{Interval: "1m"},
+		},
+		{
 			// No data type at all is the Prometheus shape, where rollup.time is the rollup.
 			name: "instantRollup without a data type is not a rollup",
 			yaml: `

@@ -585,8 +585,9 @@ type gcMonitorTiming struct {
 //
 // The rollup is read from the query _gc_query projects: rollup.time for Prometheus, otherwise
 // instantRollup, which only widens the scanned window for gcQL queries. Entities is a timeless
-// current-state view with no time filter, so its instantRollup is ignored by the query builder
-// and must not be reported as a rollup here either.
+// current-state view with no time filter, so the query builder ignores both its instantRollup
+// and its evaluationDelay, and neither may be reported here. Every other data type — including
+// an absent one, the Prometheus shape — has a window its evaluationDelay shifts.
 func extractGCMonitorTiming(yamlContent string, logger log.Logger) gcMonitorTiming {
 	parsed, ok := parseGCMonitorYaml(yamlContent, logger)
 	if !ok {
@@ -611,27 +612,40 @@ func gcTimingFrom(parsed gcMonitorYaml) gcMonitorTiming {
 	case gcInstantRollupWidensWindow(query.DataType):
 		timing.Rollup = query.InstantRollup
 	}
-	if query.EvaluationDelay > 0 {
+	if query.EvaluationDelay > 0 && gcEvaluationDelayShiftsWindow(query.DataType) {
 		timing.DelaySeconds = strconv.Itoa(query.EvaluationDelay) + "s"
 	}
 	return timing
 }
 
-// gcEntitiesQueryType is the one data type whose instantRollup widens nothing: entities is a
-// timeless current-state view, so no time-window filter is built for it.
+// gcEntitiesQueryType is the one timeless data type: entities is a current-state view, so no
+// time-window filter is built for it.
 const gcEntitiesQueryType = "entities"
 
+// gcIsEntitiesQueryType reports whether a data type is the timeless entities view. Both gates
+// below deny entities rather than allowing a list of gcQL data types on purpose: an allowlist
+// here would have to track the consumer's, and would silently stop reporting timing for any
+// data type added there. Denying the single timeless type fails safe in the other direction —
+// a new data type counts, and a non-gcQL query would have to set a field its own builder
+// ignores to be affected.
+func gcIsEntitiesQueryType(dataType string) bool {
+	return strings.Split(dataType, "_")[0] == gcEntitiesQueryType
+}
+
 // gcInstantRollupWidensWindow reports whether a query's instantRollup widens the window it
-// scans. It denies entities rather than allowing a list of gcQL data types on purpose: an
-// allowlist here would have to track the consumer's, and would silently stop reporting rollups
-// for any data type added there. Denying the single timeless type fails safe in the other
-// direction — a new data type counts, and a non-gcQL query would have to set a field its own
-// builder ignores to be affected.
+// scans. An absent data type is the Prometheus shape, whose rollup lives in rollup.time.
 func gcInstantRollupWidensWindow(dataType string) bool {
 	if dataType == "" {
 		return false
 	}
-	return strings.Split(dataType, "_")[0] != gcEntitiesQueryType
+	return !gcIsEntitiesQueryType(dataType)
+}
+
+// gcEvaluationDelayShiftsWindow reports whether a query's evaluationDelay moves the window it
+// scans. Unlike the rollup, an absent data type counts: that is the Prometheus shape, where the
+// delay shifts the rule's RelativeTimeRange. Only the timeless view has nothing to shift.
+func gcEvaluationDelayShiftsWindow(dataType string) bool {
+	return !gcIsEntitiesQueryType(dataType)
 }
 
 func calculateFingerprint(labels data.Labels) string {
