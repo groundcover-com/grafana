@@ -48,9 +48,6 @@ const (
 
 const gcMonitorYamlAnnotation = "_gc_monitor_yaml"
 
-// gcAwsCurQueryType is the one multi-token gcQL data type, so a naive "_" split misroutes it.
-const gcAwsCurQueryType = "aws_cur"
-
 var annotationsToDelete = map[string]struct{}{
 	gcMonitorYamlAnnotation: {},
 }
@@ -620,22 +617,21 @@ func gcTimingFrom(parsed gcMonitorYaml) gcMonitorTiming {
 	return timing
 }
 
+// gcEntitiesQueryType is the one data type whose instantRollup widens nothing: entities is a
+// timeless current-state view, so no time-window filter is built for it.
+const gcEntitiesQueryType = "entities"
+
 // gcInstantRollupWidensWindow reports whether a query's instantRollup widens the window it
-// scans. Only gcQL queries carry one, and entities is timeless.
+// scans. It denies entities rather than allowing a list of gcQL data types on purpose: an
+// allowlist here would have to track the consumer's, and would silently stop reporting rollups
+// for any data type added there. Denying the single timeless type fails safe in the other
+// direction — a new data type counts, and a non-gcQL query would have to set a field its own
+// builder ignores to be affected.
 func gcInstantRollupWidensWindow(dataType string) bool {
 	if dataType == "" {
 		return false
 	}
-	prefix := dataType
-	if prefix != gcAwsCurQueryType {
-		prefix = strings.Split(dataType, "_")[0]
-	}
-	switch prefix {
-	case "traces", "logs", "events", "rum", "issues", "apm", "ingestion", gcAwsCurQueryType:
-		return true
-	default:
-		return false
-	}
+	return strings.Split(dataType, "_")[0] != gcEntitiesQueryType
 }
 
 func calculateFingerprint(labels data.Labels) string {

@@ -72,7 +72,7 @@ model:
 		{
 			// entities is a timeless current-state view: the query builder ignores its
 			// instantRollup, so reporting it as a rollup would widen a window never scanned.
-			name: "instantRollup on an entities query is not a rollup",
+			name: "instantRollup on a timeless entities query is not a rollup",
 			yaml: `
 evaluationInterval:
   interval: 1m
@@ -85,7 +85,8 @@ model:
 			want: gcMonitorTiming{Interval: "1m"},
 		},
 		{
-			name: "instantRollup without a gcql data type is not a rollup",
+			// No data type at all is the Prometheus shape, where rollup.time is the rollup.
+			name: "instantRollup without a data type is not a rollup",
 			yaml: `
 model:
   queries:
@@ -95,7 +96,20 @@ model:
 			want: gcMonitorTiming{},
 		},
 		{
-			name: "aws_cur is a gcql data type despite the underscore",
+			// A data type added to the consumer must keep working here without a change, so
+			// the gate denies entities rather than allowing a list.
+			name: "an unfamiliar data type still reports its instantRollup",
+			yaml: `
+model:
+  queries:
+  - name: q
+    dataType: something_new
+    instantRollup: 7m
+`,
+			want: gcMonitorTiming{Rollup: "7m"},
+		},
+		{
+			name: "aws_cur reports its instantRollup despite the underscore",
 			yaml: `
 model:
   queries:
