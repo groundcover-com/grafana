@@ -300,6 +300,7 @@ func StatesToStream(rule history_model.RuleMeta, states []state.StateTransition,
 	labels[FolderUIDLabel] = fmt.Sprint(rule.NamespaceUID)
 
 	samples := make([]Sample, 0, len(states))
+	var monitorAnnotation gcMonitorAnnotationMemo
 	for _, state := range states {
 		if !shouldRecord(state) && !logAll {
 			continue
@@ -352,8 +353,22 @@ func StatesToStream(rule history_model.RuleMeta, states []state.StateTransition,
 		labelMap := make(map[string]string, len(sanitizedLabels))
 		maps.Copy(labelMap, sanitizedLabels)
 
-		gcQuery := extractGCQuery(state.Annotations[gcMonitorYamlAnnotation], logger)
+		derived := monitorAnnotation.get(state.Annotations[gcMonitorYamlAnnotation], logger)
+		gcQuery := derived.Query
 		sanitizedLabels[models.GCQueryLabel] = gcQuery
+		// Derived labels are added after labelMap is snapshotted above, so they never enter
+		// the fingerprint — it keys dispatch-center's notification state, and moving it would
+		// orphan every open alert cycle.
+		for key, value := range map[string]string{
+			models.GCRollupLabel:       derived.Timing.Rollup,
+			models.GCEvalIntervalLabel: derived.Timing.Interval,
+			models.GCPendingForLabel:   derived.Timing.PendingFor,
+			models.GCEvalDelayLabel:    derived.Timing.DelaySeconds,
+		} {
+			if value != "" {
+				sanitizedLabels[key] = value
+			}
+		}
 		fingerprint := calculateFingerprint(labelMap)
 
 		parsedSummary := expandSummaryTemplate(
@@ -424,6 +439,10 @@ type gcMonitorQueryOutput struct {
 type gcMonitorQueryRaw struct {
 	Expression string `yaml:"expression"`
 
+	// EvaluationDelay shifts the evaluated window back by this many seconds, for sources
+	// that backfill recent data.
+	EvaluationDelay int `yaml:"evaluationDelay"`
+
 	// gcql format fields
 	DataType      string `yaml:"dataType"`
 	InstantRollup string `yaml:"instantRollup"`
@@ -436,10 +455,57 @@ type gcMonitorQueryRaw struct {
 	} `yaml:"rollup"`
 }
 
+// parseGCMonitorYaml unmarshals the _gc_monitor_yaml annotation. Failures are logged and
+// reported as not-ok: these values decorate a state row and must never fail the state write.
+func parseGCMonitorYaml(yamlContent string, logger log.Logger) (gcMonitorYaml, bool) {
+	if yamlContent == "" {
+		return gcMonitorYaml{}, false
+	}
+	var parsed gcMonitorYaml
+	if err := yaml.Unmarshal([]byte(html.UnescapeString(yamlContent)), &parsed); err != nil {
+		logger.Debug("Failed to parse _gc_monitor_yaml annotation", "error", err)
+		return gcMonitorYaml{}, false
+	}
+	return parsed, true
+}
+
+// gcMonitorAnnotation holds everything derived from one _gc_monitor_yaml annotation.
+type gcMonitorAnnotation struct {
+	Query  string
+	Timing gcMonitorTiming
+}
+
+// gcMonitorAnnotationMemo parses an annotation once and reuses it for every state that carries
+// the same one. The annotation is rule-level, so a batch of states shares a single value, while
+// the loop over them is per series — and unmarshalling a monitor costs on the order of 100µs
+// and 30KB, which a rule with thousands of series would pay on every evaluation.
+type gcMonitorAnnotationMemo struct {
+	raw    string
+	cached gcMonitorAnnotation
+	filled bool
+}
+
+func (m *gcMonitorAnnotationMemo) get(yamlContent string, logger log.Logger) gcMonitorAnnotation {
+	if m.filled && m.raw == yamlContent {
+		return m.cached
+	}
+	derived := gcMonitorAnnotation{}
+	if parsed, ok := parseGCMonitorYaml(yamlContent, logger); ok {
+		derived.Query = gcQueryFrom(parsed, logger)
+		derived.Timing = gcTimingFrom(parsed)
+	}
+	m.raw, m.cached, m.filled = yamlContent, derived, true
+	return derived
+}
+
 type gcMonitorYaml struct {
 	Model struct {
 		Queries []gcMonitorQueryRaw `yaml:"queries"`
 	} `yaml:"model"`
+	EvaluationInterval struct {
+		Interval   string `yaml:"interval"`
+		PendingFor string `yaml:"pendingFor"`
+	} `yaml:"evaluationInterval"`
 }
 
 // extractGCQuery parses the _gc_monitor_yaml annotation and extracts model.queries[0] as a JSON string.
@@ -466,18 +532,14 @@ type gcMonitorYaml struct {
 //	      function: avg
 //	      time: 5m
 func extractGCQuery(yamlContent string, logger log.Logger) string {
-	if yamlContent == "" {
+	parsed, ok := parseGCMonitorYaml(yamlContent, logger)
+	if !ok {
 		return ""
 	}
+	return gcQueryFrom(parsed, logger)
+}
 
-	cleanYaml := html.UnescapeString(yamlContent)
-
-	var parsed gcMonitorYaml
-	if err := yaml.Unmarshal([]byte(cleanYaml), &parsed); err != nil {
-		logger.Debug("Failed to parse _gc_monitor_yaml annotation", "error", err)
-		return ""
-	}
-
+func gcQueryFrom(parsed gcMonitorYaml, logger log.Logger) string {
 	if len(parsed.Model.Queries) == 0 {
 		logger.Debug("No queries found in _gc_monitor_yaml annotation")
 		return ""
@@ -506,6 +568,84 @@ func extractGCQuery(yamlContent string, logger log.Logger) string {
 	}
 
 	return string(queryJSON)
+}
+
+// gcMonitorTiming carries the monitor's evaluation configuration verbatim, as strings, so the
+// consumer parses with its own duration helpers rather than this fork reimplementing them.
+type gcMonitorTiming struct {
+	Rollup       string
+	Interval     string
+	PendingFor   string
+	DelaySeconds string
+}
+
+// extractGCMonitorTiming pulls the evaluation configuration out of the _gc_monitor_yaml
+// annotation. Values are copied as written — no parsing, no arithmetic, no unit conversion —
+// because the consumer already has helpers for every form these fields can take.
+//
+// The rollup is read from the query _gc_query projects: rollup.time for Prometheus, otherwise
+// instantRollup, which only widens the scanned window for gcQL queries. Entities is a timeless
+// current-state view with no time filter, so the query builder ignores both its instantRollup
+// and its evaluationDelay, and neither may be reported here. Every other data type — including
+// an absent one, the Prometheus shape — has a window its evaluationDelay shifts.
+func extractGCMonitorTiming(yamlContent string, logger log.Logger) gcMonitorTiming {
+	parsed, ok := parseGCMonitorYaml(yamlContent, logger)
+	if !ok {
+		return gcMonitorTiming{}
+	}
+	return gcTimingFrom(parsed)
+}
+
+func gcTimingFrom(parsed gcMonitorYaml) gcMonitorTiming {
+	timing := gcMonitorTiming{
+		Interval:   parsed.EvaluationInterval.Interval,
+		PendingFor: parsed.EvaluationInterval.PendingFor,
+	}
+	if len(parsed.Model.Queries) == 0 {
+		return timing
+	}
+
+	query := parsed.Model.Queries[0]
+	switch {
+	case query.Rollup.Time != "":
+		timing.Rollup = query.Rollup.Time
+	case gcInstantRollupWidensWindow(query.DataType):
+		timing.Rollup = query.InstantRollup
+	}
+	if query.EvaluationDelay > 0 && gcEvaluationDelayShiftsWindow(query.DataType) {
+		timing.DelaySeconds = strconv.Itoa(query.EvaluationDelay) + "s"
+	}
+	return timing
+}
+
+// gcEntitiesQueryType is the one timeless data type: entities is a current-state view, so no
+// time-window filter is built for it.
+const gcEntitiesQueryType = "entities"
+
+// gcIsEntitiesQueryType reports whether a data type is the timeless entities view. Both gates
+// below deny entities rather than allowing a list of gcQL data types on purpose: an allowlist
+// here would have to track the consumer's, and would silently stop reporting timing for any
+// data type added there. Denying the single timeless type fails safe in the other direction —
+// a new data type counts, and a non-gcQL query would have to set a field its own builder
+// ignores to be affected.
+func gcIsEntitiesQueryType(dataType string) bool {
+	return strings.Split(dataType, "_")[0] == gcEntitiesQueryType
+}
+
+// gcInstantRollupWidensWindow reports whether a query's instantRollup widens the window it
+// scans. An absent data type is the Prometheus shape, whose rollup lives in rollup.time.
+func gcInstantRollupWidensWindow(dataType string) bool {
+	if dataType == "" {
+		return false
+	}
+	return !gcIsEntitiesQueryType(dataType)
+}
+
+// gcEvaluationDelayShiftsWindow reports whether a query's evaluationDelay moves the window it
+// scans. Unlike the rollup, an absent data type counts: that is the Prometheus shape, where the
+// delay shifts the rule's RelativeTimeRange. Only the timeless view has nothing to shift.
+func gcEvaluationDelayShiftsWindow(dataType string) bool {
+	return !gcIsEntitiesQueryType(dataType)
 }
 
 func calculateFingerprint(labels data.Labels) string {
