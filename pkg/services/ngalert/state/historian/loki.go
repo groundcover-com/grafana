@@ -359,15 +359,17 @@ func StatesToStream(rule history_model.RuleMeta, states []state.StateTransition,
 		// Derived labels are added after labelMap is snapshotted above, so they never enter
 		// the fingerprint — it keys dispatch-center's notification state, and moving it would
 		// orphan every open alert cycle.
-		for key, value := range map[string]string{
-			models.GCRollupLabel:       derived.Timing.Rollup,
-			models.GCEvalIntervalLabel: derived.Timing.Interval,
-			models.GCPendingForLabel:   derived.Timing.PendingFor,
-			models.GCEvalDelayLabel:    derived.Timing.DelaySeconds,
-		} {
-			if value != "" {
-				sanitizedLabels[key] = value
-			}
+		if v := derived.Timing.Rollup; v != "" {
+			sanitizedLabels[models.GCRollupLabel] = v
+		}
+		if v := derived.Timing.Interval; v != "" {
+			sanitizedLabels[models.GCEvalIntervalLabel] = v
+		}
+		if v := derived.Timing.PendingFor; v != "" {
+			sanitizedLabels[models.GCPendingForLabel] = v
+		}
+		if v := derived.Timing.DelaySeconds; v != "" {
+			sanitizedLabels[models.GCEvalDelayLabel] = v
 		}
 		fingerprint := calculateFingerprint(labelMap)
 
@@ -508,7 +510,7 @@ type gcMonitorYaml struct {
 	} `yaml:"evaluationInterval"`
 }
 
-// extractGCQuery parses the _gc_monitor_yaml annotation and extracts model.queries[0] as a JSON string.
+// gcQueryFrom projects model.queries[0] onto a JSON string.
 // Supports two YAML formats:
 //
 // gcql format:
@@ -531,14 +533,6 @@ type gcMonitorYaml struct {
 //	    rollup:
 //	      function: avg
 //	      time: 5m
-func extractGCQuery(yamlContent string, logger log.Logger) string {
-	parsed, ok := parseGCMonitorYaml(yamlContent, logger)
-	if !ok {
-		return ""
-	}
-	return gcQueryFrom(parsed, logger)
-}
-
 func gcQueryFrom(parsed gcMonitorYaml, logger log.Logger) string {
 	if len(parsed.Model.Queries) == 0 {
 		logger.Debug("No queries found in _gc_monitor_yaml annotation")
@@ -579,23 +573,15 @@ type gcMonitorTiming struct {
 	DelaySeconds string
 }
 
-// extractGCMonitorTiming pulls the evaluation configuration out of the _gc_monitor_yaml
-// annotation. Values are copied as written — no parsing, no arithmetic, no unit conversion —
-// because the consumer already has helpers for every form these fields can take.
+// gcTimingFrom pulls the evaluation configuration out of a parsed _gc_monitor_yaml annotation.
+// Values are copied as written — no parsing, no arithmetic, no unit conversion — because the
+// consumer already has helpers for every form these fields can take.
 //
 // The rollup is read from the query _gc_query projects: rollup.time for Prometheus, otherwise
 // instantRollup, which only widens the scanned window for gcQL queries. Entities is a timeless
 // current-state view with no time filter, so the query builder ignores both its instantRollup
 // and its evaluationDelay, and neither may be reported here. Every other data type — including
 // an absent one, the Prometheus shape — has a window its evaluationDelay shifts.
-func extractGCMonitorTiming(yamlContent string, logger log.Logger) gcMonitorTiming {
-	parsed, ok := parseGCMonitorYaml(yamlContent, logger)
-	if !ok {
-		return gcMonitorTiming{}
-	}
-	return gcTimingFrom(parsed)
-}
-
 func gcTimingFrom(parsed gcMonitorYaml) gcMonitorTiming {
 	timing := gcMonitorTiming{
 		Interval:   parsed.EvaluationInterval.Interval,

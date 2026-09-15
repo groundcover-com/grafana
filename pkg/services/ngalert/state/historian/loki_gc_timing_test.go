@@ -10,7 +10,7 @@ import (
 
 // The evaluation configuration is copied verbatim: the consumer already has helpers for every
 // duration form these fields can take, so parsing here would only duplicate them.
-func TestExtractGCMonitorTiming(t *testing.T) {
+func TestGCMonitorTimingFromAnnotation(t *testing.T) {
 	tests := []struct {
 		name string
 		yaml string
@@ -171,7 +171,11 @@ model:
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert.Equal(t, tt.want, extractGCMonitorTiming(tt.yaml, log.NewNopLogger()))
+			// Driven through the memo, which is what StatesToStream calls: the timing is only
+			// ever produced by parseGCMonitorYaml feeding gcTimingFrom, and a test that skipped
+			// the parse would not cover the yaml shapes several of these cases are about.
+			memo := &gcMonitorAnnotationMemo{}
+			assert.Equal(t, tt.want, memo.get(tt.yaml, log.NewNopLogger()).Timing)
 		})
 	}
 }

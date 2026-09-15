@@ -1,9 +1,14 @@
 package historian
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/grafana/grafana/pkg/infra/log"
+	"github.com/grafana/grafana/pkg/services/ngalert/eval"
+	"github.com/grafana/grafana/pkg/services/ngalert/state"
+
+	"github.com/grafana/grafana-plugin-sdk-go/data"
 )
 
 // A realistic monitor: the shape UpdateAnnotations stores in _gc_monitor_yaml.
@@ -51,19 +56,13 @@ model:
         - 5
 `
 
-func BenchmarkExtractGCMonitorTiming(b *testing.B) {
+// One cold derivation: parse plus both projections, which is what a rule's first state pays.
+func BenchmarkGCMonitorAnnotationCold(b *testing.B) {
 	logger := log.NewNopLogger()
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
-		_ = extractGCMonitorTiming(benchMonitorYAML, logger)
-	}
-}
-
-func BenchmarkExtractGCQuery(b *testing.B) {
-	logger := log.NewNopLogger()
-	b.ReportAllocs()
-	for i := 0; i < b.N; i++ {
-		_ = extractGCQuery(benchMonitorYAML, logger)
+		memo := &gcMonitorAnnotationMemo{}
+		_ = memo.get(benchMonitorYAML, logger)
 	}
 }
 
@@ -86,8 +85,36 @@ func BenchmarkGCMonitorAnnotationUnmemoized_1000States(b *testing.B) {
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
 		for state := 0; state < 1000; state++ {
-			_ = extractGCQuery(benchMonitorYAML, logger)
-			_ = extractGCMonitorTiming(benchMonitorYAML, logger)
+			// A fresh memo per state is the pre-memo shape: one parse per series.
+			memo := &gcMonitorAnnotationMemo{}
+			_ = memo.get(benchMonitorYAML, logger)
 		}
+	}
+}
+
+// The derived-label emission runs per state, inside the loop the memo above exists to keep off
+// the allocator. This measures that loop end to end for a rule with many series, which is where
+// a per-state allocation actually costs something.
+func BenchmarkStatesToStream_1000States_WithMonitorAnnotation(b *testing.B) {
+	rule := createTestRule()
+	logger := log.NewNopLogger()
+
+	states := make([]state.StateTransition, 0, 1000)
+	for i := 0; i < 1000; i++ {
+		states = append(states, state.StateTransition{
+			PreviousState: eval.Normal,
+			State: &state.State{
+				State:       eval.Alerting,
+				Labels:      data.Labels{"alertname": "bench", "series": fmt.Sprintf("s%d", i)},
+				Annotations: map[string]string{gcMonitorYamlAnnotation: benchMonitorYAML},
+				Values:      map[string]float64{},
+			},
+		})
+	}
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = StatesToStream(rule, states, nil, logger, false, nil)
 	}
 }
