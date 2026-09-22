@@ -235,7 +235,7 @@ ENV GF_PLUGIN_DIR="/usr/share/grafana/plugins" \
     GF_PATHS_PLUGINS="/usr/share/grafana/plugins"
 
 RUN apt-get update && \
-    apt-get install -y unzip gpgv && \
+    apt-get install -y unzip gpgv openssl libssl3 && \
     apt-get autoremove -y && \
     rm -rf /var/lib/apt/lists/*
 
