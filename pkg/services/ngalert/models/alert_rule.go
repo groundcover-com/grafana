@@ -167,6 +167,14 @@ const (
 	// GCQueryLabel is the label key for the alert query.
 	GCQueryLabel = "_gc_query"
 
+	// The monitor's evaluation configuration, copied verbatim from its _gc_monitor_yaml
+	// annotation so a consumer can work out how far before a firing that firing's evidence
+	// lies. Durations are as written in the monitor; the delay is in seconds.
+	GCRollupLabel       = "_gc_rollup"
+	GCEvalIntervalLabel = "_gc_eval_interval"
+	GCPendingForLabel   = "_gc_pending_for"
+	GCEvalDelayLabel    = "_gc_eval_delay"
+
 	// GCThresholdInputQueryKey is the values map key for the threshold input query value.
 	GCThresholdInputQueryKey = "threshold_input_query"
 
