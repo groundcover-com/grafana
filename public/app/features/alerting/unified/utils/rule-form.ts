@@ -96,8 +96,8 @@ export const getDefaultFormValues = (): RuleFormValues => {
     queries: [],
     recordingRulesQueries: [],
     condition: '',
-    noDataState: GrafanaAlertStateDecision.NoData,
-    execErrState: GrafanaAlertStateDecision.Error,
+    noDataState: GrafanaAlertStateDecision.OK,
+    execErrState: GrafanaAlertStateDecision.OK,
     evaluateFor: DEFAULT_GROUP_EVALUATION_INTERVAL,
     evaluateEvery: DEFAULT_GROUP_EVALUATION_INTERVAL,
     manualRouting: getDefautManualRouting(), // we default to true if the feature toggle is enabled and the user hasn't set local storage to false

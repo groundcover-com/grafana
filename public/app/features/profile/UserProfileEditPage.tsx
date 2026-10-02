@@ -12,7 +12,7 @@ import { useQueryParams } from 'app/core/hooks/useQueryParams';
 import { t } from 'app/core/internationalization';
 import { StoreState } from 'app/types';
 
-import UserOrganizations from './UserOrganizations';
+// import UserOrganizations from './UserOrganizations';
 import UserProfileEditForm from './UserProfileEditForm';
 import UserSessions from './UserSessions';
 import { UserTeams } from './UserTeams';
@@ -108,7 +108,7 @@ export function UserProfileEditPage({
       <SharedPreferences resourceUri="user" preferenceType="user" />
       <Stack direction="column" gap={6}>
         <UserTeams isLoading={teamsAreLoading} teams={teams} />
-        <UserOrganizations isLoading={orgsAreLoading} setUserOrg={changeUserOrg} orgs={orgs} user={user} />
+        {/* <UserOrganizations isLoading={orgsAreLoading} setUserOrg={changeUserOrg} orgs={orgs} user={user} /> */}
         <UserSessions isLoading={sessionsAreLoading} revokeUserSession={revokeUserSession} sessions={sessions} />
       </Stack>
     </Stack>
