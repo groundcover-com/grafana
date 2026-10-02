@@ -356,6 +356,7 @@ func (d *AlertsRouter) Send(ctx context.Context, key models.AlertRuleKey, alerts
 		logger.Info("No alerts to notify about")
 		return
 	}
+	PrepareAlerts(alerts.PostableAlerts)
 	// Send alerts to local notifier if they need to be handled internally
 	// or if no external AMs have been discovered yet.
 	d.adminConfigMtx.RLock()
