@@ -2,6 +2,7 @@ package setting
 
 import (
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -215,6 +216,13 @@ type UnifiedAlertingStateHistorySettings struct {
 	MultiPrimary                  string
 	MultiSecondaries              []string
 	ExternalLabels                map[string]string
+	LogAll                        bool
+	OtelEnabled                   bool
+	OtelEndpoint                  string
+	OtelEnableTLS                 bool
+	OtelTLSSkipVerify             bool
+	OtelApiKey                    string
+	OtelWriteTimeout              time.Duration
 }
 
 type UnifiedAlertingNotificationHistorySettings struct {
@@ -513,6 +521,13 @@ func (cfg *Cfg) ReadUnifiedAlertingSettings(iniFile *ini.File) error {
 		PrometheusTargetDatasourceUID: stateHistory.Key("prometheus_target_datasource_uid").MustString(""),
 		PrometheusWriteTimeout:        stateHistory.Key("prometheus_write_timeout").MustDuration(defaultHistorianPrometheusWriteTimeout),
 		ExternalLabels:                stateHistoryLabels.KeysHash(),
+		LogAll:                        stateHistory.Key("log_all").MustBool(false),
+		OtelEnabled:                   stateHistory.Key("otel_export_enabled").MustBool(false),
+		OtelEndpoint:                  stateHistory.Key("otel_endpoint").MustString(""),
+		OtelEnableTLS:                 stateHistory.Key("otel_enable_tls").MustBool(false),
+		OtelTLSSkipVerify:             stateHistory.Key("otel_tls_skip_verify").MustBool(false),
+		OtelWriteTimeout:              stateHistory.Key("otel_write_timeout").MustDuration(0),
+		OtelApiKey:                    os.Getenv("API_KEY"),
 	}
 	uaCfg.StateHistory = uaCfgStateHistory
 

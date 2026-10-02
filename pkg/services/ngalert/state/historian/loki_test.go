@@ -33,6 +33,7 @@ import (
 	"github.com/grafana/grafana/pkg/services/ngalert/eval"
 	"github.com/grafana/grafana/pkg/services/ngalert/metrics"
 	"github.com/grafana/grafana/pkg/services/ngalert/models"
+	"github.com/grafana/grafana/pkg/services/ngalert/sender"
 	"github.com/grafana/grafana/pkg/services/ngalert/state"
 	history_model "github.com/grafana/grafana/pkg/services/ngalert/state/historian/model"
 	"github.com/grafana/grafana/pkg/services/ngalert/tests/fakes"
@@ -46,7 +47,7 @@ func TestRemoteLokiBackend(t *testing.T) {
 			l := log.NewNopLogger()
 			states := singleFromNormal(&state.State{State: eval.Normal})
 
-			res := StatesToStream(rule, states, nil, l)
+			res := StatesToStream(rule, states, nil, l, false, nil)
 
 			require.Empty(t, res.Values)
 		})
@@ -56,7 +57,7 @@ func TestRemoteLokiBackend(t *testing.T) {
 			l := log.NewNopLogger()
 			states := singleFromNormal(&state.State{State: eval.Error, Error: fmt.Errorf("oh no")})
 
-			res := StatesToStream(rule, states, nil, l)
+			res := StatesToStream(rule, states, nil, l, false, nil)
 
 			entry := requireSingleEntry(t, res)
 			require.Contains(t, entry.Error, "oh no")
@@ -67,7 +68,7 @@ func TestRemoteLokiBackend(t *testing.T) {
 			l := log.NewNopLogger()
 			states := singleFromNormal(&state.State{State: eval.NoData})
 
-			res := StatesToStream(rule, states, nil, l)
+			res := StatesToStream(rule, states, nil, l, false, nil)
 
 			_ = requireSingleEntry(t, res)
 		})
@@ -80,7 +81,7 @@ func TestRemoteLokiBackend(t *testing.T) {
 				Labels: data.Labels{"a": "b"},
 			})
 
-			res := StatesToStream(rule, states, nil, l)
+			res := StatesToStream(rule, states, nil, l, false, nil)
 
 			exp := map[string]string{
 				StateHistoryLabelKey: StateHistoryLabelValue,
@@ -99,7 +100,7 @@ func TestRemoteLokiBackend(t *testing.T) {
 				Labels: data.Labels{"__private__": "b"},
 			})
 
-			res := StatesToStream(rule, states, nil, l)
+			res := StatesToStream(rule, states, nil, l, false, nil)
 
 			require.NotContains(t, res.Stream, "__private__")
 		})
@@ -112,7 +113,7 @@ func TestRemoteLokiBackend(t *testing.T) {
 				Labels: data.Labels{"a": "b"},
 			})
 
-			res := StatesToStream(rule, states, nil, l)
+			res := StatesToStream(rule, states, nil, l, false, nil)
 
 			entry := requireSingleEntry(t, res)
 
@@ -129,10 +130,12 @@ func TestRemoteLokiBackend(t *testing.T) {
 				Labels: data.Labels{"statelabel": "labelvalue"},
 			})
 
-			res := StatesToStream(rule, states, nil, l)
+			res := StatesToStream(rule, states, nil, l, false, nil)
 
 			entry := requireSingleEntry(t, res)
 			require.Contains(t, entry.InstanceLabels, "statelabel")
+			require.Contains(t, entry.InstanceLabels, "monitor_name")
+			require.Equal(t, rule.Title, entry.InstanceLabels["monitor_name"])
 		})
 
 		t.Run("does not include labels other than instance labels in log line", func(t *testing.T) {
@@ -147,10 +150,10 @@ func TestRemoteLokiBackend(t *testing.T) {
 				},
 			})
 
-			res := StatesToStream(rule, states, nil, l)
+			res := StatesToStream(rule, states, nil, l, false, nil)
 
 			entry := requireSingleEntry(t, res)
-			require.Len(t, entry.InstanceLabels, 3)
+			require.Len(t, entry.InstanceLabels, 5) // 3 original labels + monitor_name + _gc_query
 		})
 
 		t.Run("serializes values when regular", func(t *testing.T) {
@@ -161,7 +164,7 @@ func TestRemoteLokiBackend(t *testing.T) {
 				Values: map[string]float64{"A": 2.0, "B": 5.5},
 			})
 
-			res := StatesToStream(rule, states, nil, l)
+			res := StatesToStream(rule, states, nil, l, false, nil)
 
 			entry := requireSingleEntry(t, res)
 			require.NotNil(t, entry.Values)
@@ -180,7 +183,7 @@ func TestRemoteLokiBackend(t *testing.T) {
 				Labels: data.Labels{"a": "b"},
 			})
 
-			res := StatesToStream(rule, states, nil, l)
+			res := StatesToStream(rule, states, nil, l, false, nil)
 
 			entry := requireSingleEntry(t, res)
 			require.Equal(t, rule.Condition, entry.Condition)
@@ -198,13 +201,127 @@ func TestRemoteLokiBackend(t *testing.T) {
 				},
 			})
 
-			res := StatesToStream(rule, states, nil, l)
+			res := StatesToStream(rule, states, nil, l, false, nil)
 
 			entry := requireSingleEntry(t, res)
-			exp := labelFingerprint(states[0].Labels)
+			// The fingerprint should include the monitor_name label that was added
+			labelsWithMonitorName := states[0].Labels.Copy()
+			labelsWithMonitorName["monitor_name"] = rule.Title
+			exp := labelFingerprint(labelsWithMonitorName)
 			require.Equal(t, exp, entry.Fingerprint)
 		})
+
+		t.Run("state history fingerprint matches webhook _gc_fingerprint annotation", func(t *testing.T) {
+			rule := createTestRule()
+			l := log.NewNopLogger()
+			originalLabels := data.Labels{
+				"alertname":                    rule.Title,
+				"severity":                     "critical",
+				"instance":                     "localhost:9090",
+				"__alert_rule_uid__":           "abc123",
+				"__alert_rule_namespace_uid__": "ns-uid",
+			}
+			states := singleFromNormal(&state.State{
+				State:  eval.Alerting,
+				Labels: originalLabels.Copy(),
+			})
+
+			res := StatesToStream(rule, states, nil, l, false, nil)
+			stateFingerprint := requireSingleEntry(t, res).Fingerprint
+
+			webhookLabels := make(map[string]string, len(originalLabels))
+			for k, v := range originalLabels {
+				webhookLabels[k] = v
+			}
+			gcFingerprint := sender.ComputeGCFingerprint(webhookLabels)
+
+			require.Equal(t, gcFingerprint, stateFingerprint,
+				"_gc_fingerprint sent via webhook must match the state history fingerprint")
+		})
+
+		t.Run("sets is_muted field when muteChecker is provided", func(t *testing.T) {
+			rule := createTestRule()
+			l := log.NewNopLogger()
+			states := singleFromNormal(&state.State{
+				State: eval.Alerting,
+				Labels: data.Labels{
+					"alertname": "test",
+					"instance":  "localhost",
+				},
+			})
+
+			// Create a mock mute checker
+			muteChecker := &mockMuteChecker{
+				silenceIds: []string{"123"},
+			}
+
+			res := StatesToStream(rule, states, nil, l, false, muteChecker)
+
+			entry := requireSingleEntry(t, res)
+			require.True(t, len(entry.SilenceIds) > 0, "Alert should be marked as muted")
+		})
+
+		t.Run("sets is_muted to false when alert is not muted", func(t *testing.T) {
+			rule := createTestRule()
+			l := log.NewNopLogger()
+			states := singleFromNormal(&state.State{
+				State: eval.Alerting,
+				Labels: data.Labels{
+					"alertname": "test",
+					"instance":  "localhost",
+				},
+			})
+
+			// Create a mock mute checker that returns false
+			muteChecker := &mockMuteChecker{
+				silenceIds: []string{},
+			}
+
+			res := StatesToStream(rule, states, nil, l, false, muteChecker)
+
+			entry := requireSingleEntry(t, res)
+			require.False(t, len(entry.SilenceIds) > 0, "Alert should not be marked as muted")
+		})
+
+		t.Run("modifies original state labels with monitor_name", func(t *testing.T) {
+			rule := createTestRule()
+			l := log.NewNopLogger()
+			originalLabels := data.Labels{
+				"alertname": "test",
+				"instance":  "localhost",
+			}
+			states := singleFromNormal(&state.State{
+				State:  eval.Alerting,
+				Labels: originalLabels,
+			})
+
+			// Keep a reference to the original state to check after StatesToStream
+			originalState := states[0].State
+
+			_ = StatesToStream(rule, states, nil, l, false, nil)
+
+			// Verify that the original state.Labels now contains monitor_name
+			require.Contains(t, originalState.Labels, MonitorNameLabel, "Original state.Labels should be modified to include monitor_name")
+			require.Equal(t, rule.Title, originalState.Labels[MonitorNameLabel], "monitor_name should have the rule title")
+
+			// Also verify the original labels we had are still there
+			require.Equal(t, "test", originalState.Labels["alertname"])
+			require.Equal(t, "localhost", originalState.Labels["instance"])
+		})
 	})
+}
+
+// mockMuteChecker is a test implementation of MuteChecker
+type mockMuteChecker struct {
+	silenceIds []string
+	err        error
+}
+
+func (m *mockMuteChecker) GetSilenceIds(orgID int64, labels data.Labels) ([]string, error) {
+	if m.err != nil {
+		return nil, m.err
+	}
+	return m.silenceIds, nil
 }
 
 func TestBuildLogQuery(t *testing.T) {
@@ -435,8 +552,8 @@ func TestMerge(t *testing.T) {
 					time.Unix(2, 0),
 				}),
 				data.NewField(dfLine, data.Labels{}, []json.RawMessage{
-					toJson(LokiEntry{RuleUID: "test-rule-1", SchemaVersion: 1, Previous: "normal", Current: "pending", Fingerprint: "test", PanelID: 123, RuleTitle: "test", InstanceLabels: map[string]string{}, RuleID: 123, Condition: "test", DashboardUID: "123", Values: jsonifyValues(map[string]float64{"a": 1.5})}),
-					toJson(LokiEntry{RuleUID: "test-rule-2", SchemaVersion: 1, Previous: "pending", Current: "firing", Fingerprint: "test", PanelID: 123, RuleTitle: "test", InstanceLabels: map[string]string{}, RuleID: 123, Condition: "test", DashboardUID: "123", Values: jsonifyValues(map[string]float64{"a": 2.5})}),
+					json.RawMessage(`{"schemaVersion": 1, "condition": "test", "dashboardUID": "123", "fingerprint": "test", "labels": {}, "panelID": 123, "ruleTitle": "test", "previous": "normal", "current": "pending", "values":{"a": 1.5}, "ruleUID": "test-rule-1", "ruleID": 123}`),
+					json.RawMessage(`{"schemaVersion": 1, "condition": "test", "dashboardUID": "123", "fingerprint": "test", "labels": {}, "panelID": 123, "ruleTitle": "test", "previous": "pending", "current": "firing", "values":{"a": 2.5}, "ruleUID": "test-rule-2", "ruleID": 123}`),
 				}),
 				data.NewField(dfLabels, data.Labels{}, []json.RawMessage{
 					toJson(map[string]string{
@@ -513,9 +630,9 @@ func TestMerge(t *testing.T) {
 					time.Unix(5, 0),
 				}),
 				data.NewField(dfLine, data.Labels{}, []json.RawMessage{
-					toJson(LokiEntry{RuleUID: "test-rule-1", SchemaVersion: 1, Previous: "normal", Current: "pending", Fingerprint: "test", PanelID: 123, RuleTitle: "test", InstanceLabels: map[string]string{}, RuleID: 123, Condition: "test", DashboardUID: "123", Values: jsonifyValues(map[string]float64{"a": 1.5})}),
-					toJson(LokiEntry{RuleUID: "test-rule-3", SchemaVersion: 1, Previous: "pending", Current: "firing", Fingerprint: "test", PanelID: 123, RuleTitle: "test", InstanceLabels: map[string]string{}, RuleID: 123, Condition: "test", DashboardUID: "123", Values: jsonifyValues(map[string]float64{"a": 2.5})}),
-					toJson(LokiEntry{RuleUID: "test-rule-2", SchemaVersion: 1, Previous: "pending", Current: "normal", Fingerprint: "test", PanelID: 123, RuleTitle: "test", InstanceLabels: map[string]string{}, RuleID: 123, Condition: "test", DashboardUID: "123", Values: jsonifyValues(map[string]float64{"a": 0.5})}),
+					json.RawMessage(`{"schemaVersion": 1, "condition": "test", "dashboardUID": "123", "fingerprint": "test", "labels": {}, "panelID": 123, "ruleTitle": "test", "previous": "normal", "current": "pending", "values":{"a": 1.5}, "ruleUID": "test-rule-1", "ruleID": 123}`),
+					json.RawMessage(`{"schemaVersion": 1, "condition": "test", "dashboardUID": "123", "fingerprint": "test", "labels": {}, "panelID": 123, "ruleTitle": "test", "previous": "pending", "current": "firing", "values":{"a": 2.5}, "ruleUID": "test-rule-3", "ruleID": 123}`),
+					json.RawMessage(`{"schemaVersion": 1, "condition": "test", "dashboardUID": "123", "fingerprint": "test", "labels": {}, "panelID": 123, "ruleTitle": "test", "previous": "pending", "current": "normal", "values":{"a": 0.5}, "ruleUID": "test-rule-2", "ruleID": 123}`),
 				}),
 				data.NewField(dfLabels, data.Labels{}, []json.RawMessage{
 					toJson(map[string]string{
@@ -576,8 +693,8 @@ func TestMerge(t *testing.T) {
 					time.Unix(2, 0),
 				}),
 				data.NewField(dfLine, data.Labels{}, []json.RawMessage{
-					toJson(LokiEntry{RuleUID: "test-rule-1", SchemaVersion: 1, Previous: "normal", Current: "pending", Fingerprint: "test", PanelID: 123, RuleTitle: "test", InstanceLabels: map[string]string{}, RuleID: 123, Condition: "test", DashboardUID: "123", Values: jsonifyValues(map[string]float64{"a": 1.5})}),
-					toJson(LokiEntry{RuleUID: "test-rule-3", SchemaVersion: 1, Previous: "pending", Current: "firing", Fingerprint: "test", PanelID: 123, RuleTitle: "test", InstanceLabels: map[string]string{}, RuleID: 123, Condition: "test", DashboardUID: "123", Values: jsonifyValues(map[string]float64{"a": 2.5})}),
+					json.RawMessage(`{"schemaVersion": 1, "condition": "test", "dashboardUID": "123", "fingerprint": "test", "labels": {}, "panelID": 123, "ruleTitle": "test", "previous": "normal", "current": "pending", "values":{"a": 1.5}, "ruleUID": "test-rule-1", "ruleID": 123}`),
+					json.RawMessage(`{"schemaVersion": 1, "condition": "test", "dashboardUID": "123", "fingerprint": "test", "labels": {}, "panelID": 123, "ruleTitle": "test", "previous": "pending", "current": "firing", "values":{"a": 2.5}, "ruleUID": "test-rule-3", "ruleID": 123}`),
 				}),
 				data.NewField(dfLabels, data.Labels{}, []json.RawMessage{
 					toJson(map[string]string{
@@ -633,8 +750,8 @@ func TestMerge(t *testing.T) {
 					time.Unix(5, 0),
 				}),
 				data.NewField(dfLine, data.Labels{}, []json.RawMessage{
-					toJson(LokiEntry{RuleUID: "test-rule-1", SchemaVersion: 1, Previous: "normal", Current: "pending", Fingerprint: "test", PanelID: 123, RuleTitle: "test", InstanceLabels: map[string]string{}, RuleID: 123, Condition: "test", DashboardUID: "123", Values: jsonifyValues(map[string]float64{"a": 1.5})}),
-					toJson(LokiEntry{RuleUID: "test-rule-2", SchemaVersion: 1, Previous: "pending", Current: "normal", Fingerprint: "test", PanelID: 123, RuleTitle: "test", InstanceLabels: map[string]string{}, RuleID: 123, Condition: "test", DashboardUID: "123", Values: jsonifyValues(map[string]float64{"a": 0.5})}),
+					json.RawMessage(`{"schemaVersion": 1, "condition": "test", "dashboardUID": "123", "fingerprint": "test", "labels": {}, "panelID": 123, "ruleTitle": "test", "previous": "normal", "current": "pending", "values":{"a": 1.5}, "ruleUID": "test-rule-1", "ruleID": 123}`),
+					json.RawMessage(`{"schemaVersion": 1, "condition": "test", "dashboardUID": "123", "fingerprint": "test", "labels": {}, "panelID": 123, "ruleTitle": "test", "previous": "pending", "current": "normal", "values":{"a": 0.5}, "ruleUID": "test-rule-2", "ruleID": 123}`),
 				}),
 				data.NewField(dfLabels, data.Labels{}, []json.RawMessage{
 					toJson(map[string]string{
@@ -698,7 +815,7 @@ func TestMerge(t *testing.T) {
 					time.Unix(1, 0),
 				}),
 				data.NewField(dfLine, data.Labels{}, []json.RawMessage{
-					toJson(LokiEntry{RuleUID: "test-rule-1", SchemaVersion: 1, Previous: "normal", Current: "pending", Fingerprint: "test", PanelID: 123, RuleTitle: "test", InstanceLabels: map[string]string{}, RuleID: 123, Condition: "test", DashboardUID: "123", Values: jsonifyValues(map[string]float64{"a": 1.5})}),
+					json.RawMessage(`{"schemaVersion": 1, "condition": "test", "dashboardUID": "123", "fingerprint": "test", "labels": {}, "panelID": 123, "ruleTitle": "test", "previous": "normal", "current": "pending", "values":{"a": 1.5}, "ruleUID": "test-rule-1", "ruleID": 123}`),
 				}),
 				data.NewField(dfLabels, data.Labels{}, []json.RawMessage{
 					toJson(map[string]string{
