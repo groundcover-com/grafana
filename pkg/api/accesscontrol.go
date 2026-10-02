@@ -601,7 +601,7 @@ func (hs *HTTPServer) declareFixedRoles() error {
 		libraryPanelsReaderRole, libraryPanelsWriterRole, libraryPanelsGeneralReaderRole, libraryPanelsGeneralWriterRole,
 		snapshotsCreatorRole, snapshotsDeleterRole, snapshotsReaderRole, allAnnotationsReaderRole, allAnnotationsWriterRole}
 
-	return hs.accesscontrolService.DeclareFixedRoles(roles...)
+	return hs.accesscontrolService.DeclareFixedRoles(gcRestrictOrgAdminRoles(roles)...)
 }
 
 // Metadata helpers
