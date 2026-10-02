@@ -606,8 +606,8 @@ require (
 	github.com/uber/jaeger-lib v2.4.1+incompatible // indirect
 	github.com/unknwon/bra v0.0.0-20200517080246-1e3013ecaff8 // indirect
 	github.com/unknwon/com v1.0.1 // indirect
-	github.com/unknwon/log v0.0.0-20200308114134-929b1006e34a // indirect
-	github.com/valyala/bytebufferpool v1.0.0 // indirect
+	github.com/unknwon/log v0.0.0-20200308114134-929b1006e34a
+	github.com/valyala/bytebufferpool v1.0.0
 	github.com/wk8/go-ordered-map/v2 v2.1.8 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	github.com/xrash/smetrics v0.0.0-20240521201337-686a1a2994c1 // indirect
@@ -681,6 +681,11 @@ require (
 )
 
 require (
+	github.com/flosch/pongo2/v6 v6.1.0
+	gopkg.in/yaml.v3 v3.0.1
+)
+
+require (
 	github.com/atotto/clipboard v0.1.4 // indirect
 	github.com/aymanbagabas/go-osc52/v2 v2.0.1 // indirect
 	github.com/charmbracelet/colorprofile v0.4.2 // indirect
@@ -702,7 +707,6 @@ require (
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.2 // indirect
 	github.com/sony/gobreaker/v2 v2.4.0 // indirect
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
-	gopkg.in/yaml.v3 v3.0.1 // indirect
 	k8s.io/kms v0.35.0 // indirect
 	modernc.org/libc v1.74.3 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
@@ -753,3 +757,5 @@ exclude (
 	// otherwise pulled in as a transitive dependency.
 	k8s.io/client-go v12.0.0+incompatible
 )
+
+replace github.com/grafana/alerting => github.com/groundcover-com/alerting v0.0.0-20261002034431-adecbc7a85d3

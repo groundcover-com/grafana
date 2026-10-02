@@ -40,3 +40,5 @@ use (
 )
 
 replace github.com/prometheus/alertmanager => github.com/grafana/prometheus-alertmanager v0.25.1-0.20260112162805-d29cc9cf7f0f
+
+replace github.com/grafana/alerting => github.com/groundcover-com/alerting v0.0.0-20261002034431-adecbc7a85d3
