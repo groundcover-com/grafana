@@ -1223,6 +1223,8 @@ github.com/fatih/color v1.19.0/go.mod h1:zNk67I0ZUT1bEGsSGyCZYZNrHuTkJJB+r6Q9VuM
 github.com/felixge/httpsnoop v1.0.4/go.mod h1:m8KPJKqk1gH5J9DgRY2ASl2lWCfGKXixSwevea8zH2U=
 github.com/felixge/httpsnoop v1.1.0 h1:3YtUj32ZZkqZtt3sZZsClsymw/QDuVfpNhoA31zeORc=
 github.com/felixge/httpsnoop v1.1.0/go.mod h1:Zqxgdd+1Rkcz8euOqdr7lqgCRJztwr5hp9vDSi5UZCE=
+github.com/flosch/pongo2/v6 v6.1.0 h1:A/NJbrQJJD2B2mbpw3DRFwBYG0xpCr3vwFlEr46y1HQ=
+github.com/flosch/pongo2/v6 v6.1.0/go.mod h1:CuDpFm47R0uGGE7z13/tTlt1Y6zdxvr2RLT5LJhsHEU=
 github.com/fogleman/gg v1.2.1-0.20190220221249-0403632d5b90/go.mod h1:R/bRT+9gY/C5z7JzPU0zXsXHKM4/ayA+zqcVNZzPa1k=
 github.com/fogleman/gg v1.3.0/go.mod h1:R/bRT+9gY/C5z7JzPU0zXsXHKM4/ayA+zqcVNZzPa1k=
 github.com/form3tech-oss/jwt-go v3.2.2+incompatible/go.mod h1:pbq4aXjuKjdthFRnoDwaVPLA+WlJuPGy+QneDUgJi2k=
@@ -1671,8 +1673,6 @@ github.com/gorilla/sessions v1.2.1 h1:DHd3rPN5lE3Ts3D8rKkQ8x/0kqfeNmBAaiSi+o7Fsg
 github.com/gorilla/sessions v1.2.1/go.mod h1:dk2InVEVJ0sfLlnXv9EAgkf6ecYs/i80K/zI+bUmuGM=
 github.com/gorilla/websocket v1.5.4-0.20250319132907-e064f32e3674 h1:JeSE6pjso5THxAzdVpqr6/geYxZytqFMBCOtn/ujyeo=
 github.com/gorilla/websocket v1.5.4-0.20250319132907-e064f32e3674/go.mod h1:r4w70xmWCQKmi1ONH4KIaBptdivuRPyosB9RmPlGEwA=
-github.com/grafana/alerting v0.0.0-20260206150146-b5f69c55f91a h1:fxobN2YCwTknqsrNwlkvXPyEhG6L67vZH6B0aAnSXGA=
-github.com/grafana/alerting v0.0.0-20260206150146-b5f69c55f91a/go.mod h1:Ji0SfJChcwjgq8ljy6Y5CcYfHfAYKXjKYeysOoDS/6s=
 github.com/grafana/authlib v0.0.0-20260203153107-16a114a99f67 h1:4t3595k0Ef94NOlg4Br785+cTgAKa4rqeo9lMHbV1fs=
 github.com/grafana/authlib v0.0.0-20260203153107-16a114a99f67/go.mod h1:za8MGa5J9Bbgm2XorXc+FbGe72ln46OpN5o8P1uX9Og=
 github.com/grafana/authlib/types v0.0.0-20260203131350-b83e80394acc h1:wagsf4me4j/UFNocyMJHz5/803XpnfGJtNj8/YWy0j0=
@@ -1741,6 +1741,8 @@ github.com/grafana/sqlds/v5 v5.0.4 h1:Q4T4wXI5tolN1EUQtN81I4SGBFlBF4tD8XYh34/kk2
 github.com/grafana/sqlds/v5 v5.0.4/go.mod h1:BvFzzPgc2bmr3R78s1TuZr2gOELpBM9tt6m1DKI8Ts4=
 github.com/grafana/tempo v1.5.1-0.20260427112133-525d1bab07e0 h1:kE5kdMnyPJmlNUdWhahfzqPYB3vM8DtAxgWymbB8nOA=
 github.com/grafana/tempo v1.5.1-0.20260427112133-525d1bab07e0/go.mod h1:zsoFhLpNKV0zyDbgvTtmSnDIN+NBtFiqCj/Xa1w+Cg4=
+github.com/groundcover-com/alerting v0.0.0-20261002034431-adecbc7a85d3 h1:JFSfuR31hieNKuPuTLVHoiMpuqzglRNoQLntiWwRlYM=
+github.com/groundcover-com/alerting v0.0.0-20261002034431-adecbc7a85d3/go.mod h1:Ji0SfJChcwjgq8ljy6Y5CcYfHfAYKXjKYeysOoDS/6s=
 github.com/grpc-ecosystem/go-grpc-middleware v1.4.0 h1:UH//fgunKIs4JdUbpDl1VZCDaL56wXCB/5+wF6uHfaI=
 github.com/grpc-ecosystem/go-grpc-middleware v1.4.0/go.mod h1:g5qyo/la0ALbONm6Vbp88Yd8NsDy6rZz+RcrMPxvld8=
 github.com/grpc-ecosystem/go-grpc-middleware/providers/prometheus v1.1.0 h1:QGLs/O40yoNK9vmy4rhUGBVyMf1lISBGtXRpsu/Qu/o=

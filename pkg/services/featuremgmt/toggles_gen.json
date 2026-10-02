@@ -1563,6 +1563,23 @@
     },
     {
       "metadata": {
+        "name": "disableInstanceStore",
+        "resourceVersion": "1790913529246",
+        "creationTimestamp": "2026-10-02T03:58:13Z",
+        "annotations": {
+          "grafana.app/updatedTimestamp": "2026-10-02 03:58:49.246972143 +0000 UTC"
+        }
+      },
+      "spec": {
+        "description": "Disable the use of instance store",
+        "stage": "experimental",
+        "codeowner": "@groundcover/groundcover",
+        "requiresRestart": true,
+        "expression": "false"
+      }
+    },
+    {
+      "metadata": {
         "name": "disableNumericMetricsSortingInExpressions",
         "resourceVersion": "1768498862515",
         "creationTimestamp": "2024-04-16T14:52:47Z",
