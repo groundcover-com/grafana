@@ -1531,6 +1531,13 @@ var (
 			Owner:       grafanaPartnerPluginsSquad,
 			Expression:  "true", // Enabled by default for now
 		},
+		{
+			Name:            "disableInstanceStore",
+			Description:     "Disable the use of instance store",
+			Stage:           FeatureStageExperimental,
+			Owner:           groundcover,
+			RequiresRestart: true,
+		},
 	}
 )
 
