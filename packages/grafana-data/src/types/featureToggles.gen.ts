@@ -222,4 +222,5 @@ export interface FeatureToggles {
   unifiedStorageSearch?: boolean;
   pluginsSriChecks?: boolean;
   azureMonitorEnableUserAuth?: boolean;
+  disableInstanceStore?: boolean;
 }

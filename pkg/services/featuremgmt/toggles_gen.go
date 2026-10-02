@@ -751,10 +751,6 @@ const (
 	// Enable grafana dataplane aggregator
 	FlagDataplaneAggregator = "dataplaneAggregator"
 
-	// FlagDisableInstanceStore
-	// Disable instance store
-	FlagDisableInstanceStore = "disableInstanceStore"
-
 	// FlagNewFiltersUI
 	// Enables new combobox style UI for the Ad hoc filters variable in scenes architecture
 	FlagNewFiltersUI = "newFiltersUI"
@@ -826,4 +822,8 @@ const (
 	// FlagAzureMonitorEnableUserAuth
 	// Enables user auth for Azure Monitor datasource only
 	FlagAzureMonitorEnableUserAuth = "azureMonitorEnableUserAuth"
+
+	// FlagDisableInstanceStore
+	// Disable the use of instance store
+	FlagDisableInstanceStore = "disableInstanceStore"
 )

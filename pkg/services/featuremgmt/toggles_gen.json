@@ -1072,6 +1072,19 @@
     },
     {
       "metadata": {
+        "name": "disableInstanceStore",
+        "resourceVersion": "1790912779875",
+        "creationTimestamp": "2026-10-02T03:46:19Z"
+      },
+      "spec": {
+        "description": "Disable the use of instance store",
+        "stage": "experimental",
+        "codeowner": "@groundcover/groundcover",
+        "requiresRestart": true
+      }
+    },
+    {
+      "metadata": {
         "name": "disableNumericMetricsSortingInExpressions",
         "resourceVersion": "1718727528075",
         "creationTimestamp": "2024-04-16T14:52:47Z"

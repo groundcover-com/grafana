@@ -1,4 +1,4 @@
-go 1.24.3
+go 1.25.0
 
 // The `skip:golangci-lint` comment tag is used to exclude the package from the `golangci-lint` GitHub Action.
 // The module at the root of the repo (`.`) is excluded because ./pkg/... is included manually in the `golangci-lint` configuration.
@@ -23,3 +23,5 @@ use (
 replace xorm.io/xorm => ./pkg/util/xorm
 
 replace github.com/prometheus/alertmanager => github.com/grafana/prometheus-alertmanager v0.25.1-0.20240930132144-b5e64e81e8d3
+
+replace github.com/grafana/alerting => github.com/groundcover-com/alerting v0.0.4
