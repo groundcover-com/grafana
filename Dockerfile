@@ -3,6 +3,7 @@
 # to maintain formatting of multiline commands in vscode, add the following to settings.json:
 # "docker.languageserver.formatter.ignoreMultilineInstructions": true
 
+ARG GF_VERSION=12.4.12
 ARG GO_IMAGE=go-builder-base
 ARG JS_IMAGE=js-builder-base
 ARG JS_PLATFORM=linux/amd64
@@ -57,12 +58,13 @@ COPY emails emails
 RUN yarn ${JS_YARN_BUILD_FLAG}
 
 # Golang build stage
-FROM ${GO_IMAGE} AS go-builder
+FROM --platform=${JS_PLATFORM} ${GO_IMAGE} AS go-builder
 
 ARG COMMIT_SHA=""
 ARG BUILD_BRANCH=""
 ARG GO_BUILD_TAGS="oss"
 ARG WIRE_TAGS="oss"
+ARG TARGETARCH
 
 RUN if grep -i -q alpine /etc/issue; then \
   apk add --no-cache \
@@ -105,7 +107,8 @@ ENV BUILD_BRANCH=${BUILD_BRANCH}
 
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
-    make build-go GO_BUILD_TAGS=${GO_BUILD_TAGS} WIRE_TAGS=${WIRE_TAGS}
+    GOARCH=${TARGETARCH} make build-go GO_BUILD_TAGS=${GO_BUILD_TAGS} WIRE_TAGS=${WIRE_TAGS} && \
+    cp bin/linux/${TARGETARCH}/grafana* bin/
 
 RUN mkdir -p data/plugins-bundled
 
@@ -271,3 +274,36 @@ ENTRYPOINT [ "/run.sh" ]
 # Default stage — alpine. Builds without --target produce an alpine image.
 # Use --target=final-ubuntu to build the ubuntu variant instead.
 FROM final-alpine
+
+# groundcover image: upstream ubuntu image with this build's binaries and bundled plugins.
+# Kept as the last stage so builds without --target produce it (CI also passes target: groundcover).
+FROM grafana/grafana:${GF_VERSION}-ubuntu AS groundcover
+
+COPY --from=go-src /tmp/grafana/bin/grafana* /tmp/grafana/bin/*/grafana* ./bin/
+COPY --from=js-src /tmp/grafana/public ./public
+
+USER 0
+
+ARG TARGETARCH
+ARG GF_UID="472"
+
+ENV GF_PLUGIN_DIR="/usr/share/grafana/plugins" \
+    GF_PATHS_PLUGINS="/usr/share/grafana/plugins"
+
+RUN apt-get update && \
+    apt-get install -y unzip gpgv openssl libssl3 && \
+    apt-get autoremove -y && \
+    rm -rf /var/lib/apt/lists/*
+
+COPY grafana-clickhouse-datasource-linux-${TARGETARCH}.zip /tmp/grafana-clickhouse-datasource.zip
+COPY victoriametrics-metrics-datasource-linux-${TARGETARCH}.zip /tmp/victoriametrics-metrics-datasource.zip
+
+RUN mkdir -p ${GF_PLUGIN_DIR} && \
+    chmod -R 777 ${GF_PLUGIN_DIR} && \
+    unzip /tmp/grafana-clickhouse-datasource.zip -d ${GF_PLUGIN_DIR} && \
+    rm /tmp/grafana-clickhouse-datasource.zip && \
+    unzip /tmp/victoriametrics-metrics-datasource.zip -d ${GF_PLUGIN_DIR} && \
+    rm /tmp/victoriametrics-metrics-datasource.zip && \
+    grafana cli plugins install marcusolsson-treemap-panel 2.0.1
+
+USER "$GF_UID"
