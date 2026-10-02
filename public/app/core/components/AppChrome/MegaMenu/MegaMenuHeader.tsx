@@ -8,7 +8,7 @@ import { HOME_NAV_ID } from 'app/core/reducers/navModel';
 import { useSelector } from 'app/types/store';
 
 import { HomeLink } from '../../Branding/Branding';
-import { OrganizationSwitcher } from '../OrganizationSwitcher/OrganizationSwitcher';
+// import { OrganizationSwitcher } from '../OrganizationSwitcher/OrganizationSwitcher';
 import { getChromeHeaderLevelHeight } from '../TopBar/useChromeHeaderHeight';
 
 export interface Props {
@@ -30,7 +30,7 @@ export function MegaMenuHeader({ handleDockedMenu, onClose }: Props) {
     <div className={styles.header}>
       <Stack alignItems="center" minWidth={0} gap={1}>
         <HomeLink homeNav={homeNav} inMegaMenuOverlay={!state.megaMenuDocked} />
-        <OrganizationSwitcher />
+        {/* <OrganizationSwitcher /> */}
       </Stack>
       <div className={styles.flexGrow} />
       <IconButton

@@ -113,9 +113,9 @@ const expectedModifiedRule2 = (uid: string) => ({
         },
       },
     ],
-    exec_err_state: 'Error',
+    exec_err_state: 'OK', // groundcover default (formDefaults)
     is_paused: false,
-    no_data_state: 'NoData',
+    no_data_state: 'OK',
     title: 'Rule2 updated',
     uid: uid,
     missing_series_evals_to_resolve: 0,
