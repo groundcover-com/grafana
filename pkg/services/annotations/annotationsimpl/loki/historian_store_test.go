@@ -87,7 +87,7 @@ func TestIntegrationAlertStateHistoryStore(t *testing.T) {
 			rule := dashboardRules[dashboard1.UID][0]
 
 			fakeLokiClient.rangeQueryRes = []lokiclient.Stream{
-				historian.StatesToStream(ruleMetaFromRule(t, rule), transitions, map[string]string{}, log.NewNopLogger()),
+				historian.StatesToStream(ruleMetaFromRule(t, rule), transitions, map[string]string{}, log.NewNopLogger(), false, nil),
 			}
 
 			query := annotations.ItemQuery{
@@ -113,7 +113,7 @@ func TestIntegrationAlertStateHistoryStore(t *testing.T) {
 			rule := dashboardRules[dashboard1.UID][0]
 
 			fakeLokiClient.rangeQueryRes = []lokiclient.Stream{
-				historian.StatesToStream(ruleMetaFromRule(t, rule), transitions, map[string]string{}, log.NewNopLogger()),
+				historian.StatesToStream(ruleMetaFromRule(t, rule), transitions, map[string]string{}, log.NewNopLogger(), false, nil),
 			}
 
 			query := annotations.ItemQuery{
@@ -185,8 +185,8 @@ func TestIntegrationAlertStateHistoryStore(t *testing.T) {
 
 		t.Run("can query history by dashboard id", func(t *testing.T) {
 			fakeLokiClient.rangeQueryRes = []lokiclient.Stream{
-				historian.StatesToStream(ruleMetaFromRule(t, dashboardRules[dashboard1.UID][0]), transitions, map[string]string{}, log.NewNopLogger()),
-				historian.StatesToStream(ruleMetaFromRule(t, dashboardRules[dashboard1.UID][1]), transitions, map[string]string{}, log.NewNopLogger()),
+				historian.StatesToStream(ruleMetaFromRule(t, dashboardRules[dashboard1.UID][0]), transitions, map[string]string{}, log.NewNopLogger(), false, nil),
+				historian.StatesToStream(ruleMetaFromRule(t, dashboardRules[dashboard1.UID][1]), transitions, map[string]string{}, log.NewNopLogger(), false, nil),
 			}
 
 			query := annotations.ItemQuery{
@@ -210,8 +210,8 @@ func TestIntegrationAlertStateHistoryStore(t *testing.T) {
 
 		t.Run("should return empty results when type is annotation", func(t *testing.T) {
 			fakeLokiClient.rangeQueryRes = []lokiclient.Stream{
-				historian.StatesToStream(ruleMetaFromRule(t, dashboardRules[dashboard1.UID][0]), transitions, map[string]string{}, log.NewNopLogger()),
-				historian.StatesToStream(ruleMetaFromRule(t, dashboardRules[dashboard1.UID][1]), transitions, map[string]string{}, log.NewNopLogger()),
+				historian.StatesToStream(ruleMetaFromRule(t, dashboardRules[dashboard1.UID][0]), transitions, map[string]string{}, log.NewNopLogger(), false, nil),
+				historian.StatesToStream(ruleMetaFromRule(t, dashboardRules[dashboard1.UID][1]), transitions, map[string]string{}, log.NewNopLogger(), false, nil),
 			}
 
 			query := annotations.ItemQuery{
@@ -233,8 +233,8 @@ func TestIntegrationAlertStateHistoryStore(t *testing.T) {
 
 		t.Run("should return empty results when history is outside time range", func(t *testing.T) {
 			fakeLokiClient.rangeQueryRes = []lokiclient.Stream{
-				historian.StatesToStream(ruleMetaFromRule(t, dashboardRules[dashboard1.UID][0]), transitions, map[string]string{}, log.NewNopLogger()),
-				historian.StatesToStream(ruleMetaFromRule(t, dashboardRules[dashboard1.UID][1]), transitions, map[string]string{}, log.NewNopLogger()),
+				historian.StatesToStream(ruleMetaFromRule(t, dashboardRules[dashboard1.UID][0]), transitions, map[string]string{}, log.NewNopLogger(), false, nil),
+				historian.StatesToStream(ruleMetaFromRule(t, dashboardRules[dashboard1.UID][1]), transitions, map[string]string{}, log.NewNopLogger(), false, nil),
 			}
 
 			query := annotations.ItemQuery{
@@ -258,8 +258,8 @@ func TestIntegrationAlertStateHistoryStore(t *testing.T) {
 
 		t.Run("should return partial results when history is partly outside clamped time range", func(t *testing.T) {
 			fakeLokiClient.rangeQueryRes = []lokiclient.Stream{
-				historian.StatesToStream(ruleMetaFromRule(t, dashboardRules[dashboard1.UID][0]), transitions, map[string]string{}, log.NewNopLogger()),
-				historian.StatesToStream(ruleMetaFromRule(t, dashboardRules[dashboard1.UID][1]), transitions, map[string]string{}, log.NewNopLogger()),
+				historian.StatesToStream(ruleMetaFromRule(t, dashboardRules[dashboard1.UID][0]), transitions, map[string]string{}, log.NewNopLogger(), false, nil),
+				historian.StatesToStream(ruleMetaFromRule(t, dashboardRules[dashboard1.UID][1]), transitions, map[string]string{}, log.NewNopLogger(), false, nil),
 			}
 
 			// clamp time range to 1 second
@@ -290,8 +290,8 @@ func TestIntegrationAlertStateHistoryStore(t *testing.T) {
 
 		t.Run("should sort history by time and be able to query by dashboard uid", func(t *testing.T) {
 			fakeLokiClient.rangeQueryRes = []lokiclient.Stream{
-				historian.StatesToStream(ruleMetaFromRule(t, dashboardRules[dashboard1.UID][0]), transitions, map[string]string{}, log.NewNopLogger()),
-				historian.StatesToStream(ruleMetaFromRule(t, dashboardRules[dashboard1.UID][1]), transitions, map[string]string{}, log.NewNopLogger()),
+				historian.StatesToStream(ruleMetaFromRule(t, dashboardRules[dashboard1.UID][0]), transitions, map[string]string{}, log.NewNopLogger(), false, nil),
+				historian.StatesToStream(ruleMetaFromRule(t, dashboardRules[dashboard1.UID][1]), transitions, map[string]string{}, log.NewNopLogger(), false, nil),
 			}
 
 			query := annotations.ItemQuery{
@@ -323,8 +323,8 @@ func TestIntegrationAlertStateHistoryStore(t *testing.T) {
 
 		t.Run("should return nothing if query is for tags only", func(t *testing.T) {
 			fakeLokiClient.rangeQueryRes = []lokiclient.Stream{
-				historian.StatesToStream(ruleMetaFromRule(t, dashboardRules[dashboard1.UID][0]), transitions, map[string]string{}, log.NewNopLogger()),
-				historian.StatesToStream(ruleMetaFromRule(t, dashboardRules[dashboard1.UID][1]), transitions, map[string]string{}, log.NewNopLogger()),
+				historian.StatesToStream(ruleMetaFromRule(t, dashboardRules[dashboard1.UID][0]), transitions, map[string]string{}, log.NewNopLogger(), false, nil),
+				historian.StatesToStream(ruleMetaFromRule(t, dashboardRules[dashboard1.UID][1]), transitions, map[string]string{}, log.NewNopLogger(), false, nil),
 			}
 
 			query := annotations.ItemQuery{
@@ -369,7 +369,7 @@ func TestIntegrationAlertStateHistoryStore(t *testing.T) {
 			numTransitions := 2
 			transitions := genStateTransitions(t, numTransitions, start)
 
-			stream := historian.StatesToStream(ruleMetaFromRule(t, rule), transitions, map[string]string{}, log.NewNopLogger())
+			stream := historian.StatesToStream(ruleMetaFromRule(t, rule), transitions, map[string]string{}, log.NewNopLogger(), false, nil)
 
 			items := store.annotationsFromStream(stream, annotation_ac.AccessResources{
 				Dashboards: map[string]int64{
@@ -405,10 +405,10 @@ func TestIntegrationAlertStateHistoryStore(t *testing.T) {
 			transitions := genStateTransitions(t, numTransitions, start)
 
 			rule := dashboardRules[dashboard1.UID][0]
-			stream1 := historian.StatesToStream(ruleMetaFromRule(t, rule), transitions, map[string]string{}, log.NewNopLogger())
+			stream1 := historian.StatesToStream(ruleMetaFromRule(t, rule), transitions, map[string]string{}, log.NewNopLogger(), false, nil)
 
 			rule = createAlertRule(t, sql, "Test rule", gen)
-			stream2 := historian.StatesToStream(ruleMetaFromRule(t, rule), transitions, map[string]string{}, log.NewNopLogger())
+			stream2 := historian.StatesToStream(ruleMetaFromRule(t, rule), transitions, map[string]string{}, log.NewNopLogger(), false, nil)
 
 			stream := lokiclient.Stream{
 				Values: append(stream1.Values, stream2.Values...),
@@ -435,10 +435,10 @@ func TestIntegrationAlertStateHistoryStore(t *testing.T) {
 			transitions := genStateTransitions(t, numTransitions, start)
 
 			rule := dashboardRules[dashboard1.UID][0]
-			stream1 := historian.StatesToStream(ruleMetaFromRule(t, rule), transitions, map[string]string{}, log.NewNopLogger())
+			stream1 := historian.StatesToStream(ruleMetaFromRule(t, rule), transitions, map[string]string{}, log.NewNopLogger(), false, nil)
 
 			rule.DashboardUID = nil
-			stream2 := historian.StatesToStream(ruleMetaFromRule(t, rule), transitions, map[string]string{}, log.NewNopLogger())
+			stream2 := historian.StatesToStream(ruleMetaFromRule(t, rule), transitions, map[string]string{}, log.NewNopLogger(), false, nil)
 
 			stream := lokiclient.Stream{
 				Values: append(stream1.Values, stream2.Values...),
