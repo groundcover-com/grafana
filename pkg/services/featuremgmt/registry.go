@@ -2366,6 +2366,14 @@ var (
 			HideFromDocs: true,
 			Expression:   "false",
 		},
+		{
+			Name:            "disableInstanceStore",
+			Description:     "Disable the use of instance store",
+			Stage:           FeatureStageExperimental,
+			Owner:           groundcover,
+			RequiresRestart: true,
+			Expression:      "false",
+		},
 	}
 )
 

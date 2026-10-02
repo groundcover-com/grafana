@@ -185,7 +185,7 @@ type AlertNG struct {
 
 func (ng *AlertNG) init() error {
 	// AlertNG should be initialized before the cancellation deadline of initCtx
-	initCtx, cancelFunc := context.WithTimeout(context.Background(), ng.Cfg.UnifiedAlerting.InitializationTimeout)
+	initCtx, cancelFunc := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancelFunc()
 
 	ng.store.Logger = ng.Log
@@ -404,6 +404,10 @@ func (ng *AlertNG) init() error {
 		ResolvedRetention:              ng.Cfg.UnifiedAlerting.ResolvedAlertRetention,
 
 		IgnorePendingForNoDataAndError: ng.Cfg.IsFeatureToggleEnabled(featuremgmt.FlagAlertingIgnorePendingForNoDataAndError),
+	}
+	if ng.FeatureToggles.IsEnabledGlobally(featuremgmt.FlagDisableInstanceStore) { //nolint:staticcheck
+		stateManagerCfg.InstanceStore = nil
+		ng.Log.Info("Instance store is disabled")
 	}
 	statePersister := initStatePersister(ng.Cfg.UnifiedAlerting, stateManagerCfg, ng.FeatureToggles)
 	ng.stateManager = state.NewManager(stateManagerCfg, statePersister)
