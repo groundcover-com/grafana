@@ -79,17 +79,20 @@ type RemoteLokiBackend struct {
 	clock          clock.Clock
 	metrics        *metrics.Historian
 	log            log.Logger
+	logAll         bool
 	ac             AccessControl
 	ruleStore      RuleStore
+	muteChecker    MuteChecker
 }
 
 func NewRemoteLokiBackend(logger log.Logger, cfg LokiConfig, req client.Requester, metrics *metrics.Historian, tracer tracing.Tracer, ruleStore RuleStore, ac AccessControl) *RemoteLokiBackend {
 	return &RemoteLokiBackend{
-		client:         NewLokiClient(cfg, req, metrics, logger, tracer),
+		client:         NewHistorianExportClient(cfg, req, metrics, logger, tracer),
 		externalLabels: cfg.ExternalLabels,
 		clock:          clock.New(),
 		metrics:        metrics,
 		log:            logger,
+		logAll:         cfg.LogAll,
 		ac:             ac,
 		ruleStore:      ruleStore,
 	}
@@ -102,7 +105,7 @@ func (h *RemoteLokiBackend) TestConnection(ctx context.Context) error {
 // Record writes a number of state transitions for a given rule to an external Loki instance.
 func (h *RemoteLokiBackend) Record(ctx context.Context, rule history_model.RuleMeta, states []state.StateTransition) <-chan error {
 	logger := h.log.FromContext(ctx)
-	logStream := StatesToStream(rule, states, h.externalLabels, logger)
+	logStream := StatesToStream(rule, states, h.externalLabels, logger, h.logAll, h.muteChecker)
 
 	errCh := make(chan error, 1)
 	if len(logStream.Values) == 0 {
@@ -269,7 +272,7 @@ func merge(res []Stream, folderUIDToFilter []string) (*data.Frame, error) {
 	return frame, nil
 }
 
-func StatesToStream(rule history_model.RuleMeta, states []state.StateTransition, externalLabels map[string]string, logger log.Logger) Stream {
+func StatesToStream(rule history_model.RuleMeta, states []state.StateTransition, externalLabels map[string]string, logger log.Logger, logAll bool, muteChecker MuteChecker) Stream {
 	labels := mergeLabels(make(map[string]string), externalLabels)
 	// System-defined labels take precedence over user-defined external labels.
 	labels[StateHistoryLabelKey] = StateHistoryLabelValue
@@ -279,28 +282,10 @@ func StatesToStream(rule history_model.RuleMeta, states []state.StateTransition,
 
 	samples := make([]Sample, 0, len(states))
 	for _, state := range states {
-		if !shouldRecord(state) {
+		if !shouldRecord(state) && !logAll {
 			continue
 		}
-
-		sanitizedLabels := removePrivateLabels(state.Labels)
-		entry := LokiEntry{
-			SchemaVersion:  1,
-			Previous:       state.PreviousFormatted(),
-			Current:        state.Formatted(),
-			Values:         valuesAsDataBlob(state.State),
-			Condition:      rule.Condition,
-			DashboardUID:   rule.DashboardUID,
-			PanelID:        rule.PanelID,
-			Fingerprint:    labelFingerprint(sanitizedLabels),
-			RuleTitle:      rule.Title,
-			RuleID:         rule.ID,
-			RuleUID:        rule.UID,
-			InstanceLabels: sanitizedLabels,
-		}
-		if state.State.State == eval.Error {
-			entry.Error = state.Error.Error()
-		}
+		entry := gcLokiEntry(rule, state, logger, muteChecker)
 
 		jsn, err := json.Marshal(entry)
 		if err != nil {
@@ -345,7 +330,12 @@ type LokiEntry struct {
 	RuleUID       string           `json:"ruleUID"`
 	// InstanceLabels is exactly the set of labels associated with the alert instance in Alertmanager.
 	// These should not be conflated with labels associated with log streams.
-	InstanceLabels map[string]string `json:"labels"`
+	InstanceLabels            map[string]string `json:"labels"`
+	Annotations               map[string]string `json:"annotations"`
+	EvaluationDurationSeconds float64           `json:"evaluationDurationSeconds"`
+	ThresholdInputValue       float64           `json:"thresholdInputValue"`
+	SilenceIds                []string          `json:"silenceIds"`
+	Summary                   string            `json:"summary"`
 }
 
 func valuesAsDataBlob(state *state.State) *simplejson.Json {
