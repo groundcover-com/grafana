@@ -1,0 +1,80 @@
+name: pr
+
+on:
+ pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: yarn
+      - name: Enable Corepack
+        run: corepack enable
+      - name: Install dependencies
+        run: yarn install --immutable
+      - name: Run tests
+        # Test what the gc patch stack changes on top of the upstream tag, sharded like upstream
+        run: |
+          base=$(git log --format=%H --grep='^gc(build):' -1)
+          npx jest --ci --passWithNoTests --shard=${{ matrix.shard }}/6 \
+            --changedSince="${base:?gc(build) commit not found}^"
+
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+    steps:
+      -
+        name: Checkout
+        uses: actions/checkout@v3
+      - name: Free Disk Space (Ubuntu)
+        uses: jlumbroso/free-disk-space@main
+        with:
+          # this might remove tools that are actually needed,
+          # if set to "true" but frees about 6 GB
+          tool-cache: false
+
+          # all of these default to true, but feel free to set to
+          # "false" if necessary for your workflow
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          docker-images: true
+          swap-storage: true
+      -
+        name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+      -
+        name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      -
+        name: Get Grafana Version
+        run: echo "GF_VERSION=$(npm pkg get version | tr -d '"')" >> $GITHUB_ENV
+      -
+        name: Build Docker Image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: false
+          target: groundcover
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          platforms: linux/amd64,linux/arm64
+          build-args: GF_VERSION=${{ env.GF_VERSION }}
+          tags: grafana-groundcover
