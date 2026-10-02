@@ -1,12 +1,10 @@
 # syntax=docker/dockerfile:1
 
-# to maintain formatting of multiline commands in vscode, add the following to settings.json:
-# "docker.languageserver.formatter.ignoreMultilineInstructions": true
-
+ARG GF_VERSION=11.3.7
 ARG BASE_IMAGE=alpine:3.21
 ARG JS_IMAGE=node:20-alpine
 ARG JS_PLATFORM=linux/amd64
-ARG GO_IMAGE=golang:1.24.3-alpine
+ARG GO_IMAGE=golang:1.26.1
 
 # Default to building locally
 ARG GO_SRC=go-builder
@@ -26,6 +24,8 @@ COPY plugins-bundled plugins-bundled
 COPY public public
 COPY LICENSE ./
 COPY conf/defaults.ini ./conf/defaults.ini
+COPY e2e e2e
+
 
 RUN apk add --no-cache make build-base python3
 
@@ -39,13 +39,13 @@ ENV NODE_ENV production
 RUN yarn build
 
 # Golang build stage
-FROM ${GO_IMAGE} AS go-builder
+FROM --platform=${JS_PLATFORM} ${GO_IMAGE} AS go-builder
 
 ARG COMMIT_SHA=""
 ARG BUILD_BRANCH=""
 ARG GO_BUILD_TAGS="oss"
 ARG WIRE_TAGS="oss"
-ARG BINGO="true"
+ARG BINGO="false"
 
 RUN if grep -i -q alpine /etc/issue; then \
       apk add --no-cache \
@@ -62,17 +62,18 @@ COPY go.* ./
 COPY .bingo .bingo
 
 # Include vendored dependencies
-COPY pkg/util/xorm/go.* pkg/util/xorm/
-COPY pkg/apiserver/go.* pkg/apiserver/
-COPY pkg/apimachinery/go.* pkg/apimachinery/
-COPY pkg/build/go.* pkg/build/
-COPY pkg/build/wire/go.* pkg/build/wire/
-COPY pkg/promlib/go.* pkg/promlib/
-COPY pkg/storage/unified/resource/go.* pkg/storage/unified/resource/
-COPY pkg/storage/unified/apistore/go.* pkg/storage/unified/apistore/
-COPY pkg/semconv/go.* pkg/semconv/
-COPY pkg/aggregator/go.* pkg/aggregator/
-COPY apps/playlist/go.* apps/playlist/
+COPY pkg/util/xorm pkg/util/xorm
+COPY pkg/apiserver pkg/apiserver
+COPY pkg/apimachinery pkg/apimachinery
+COPY pkg/build pkg/build
+COPY pkg/build/wire pkg/build/wire
+COPY pkg/promlib pkg/promlib
+COPY pkg/storage/unified/resource pkg/storage/unified/resource
+COPY pkg/storage/unified/apistore pkg/storage/unified/apistore
+COPY pkg/semconv pkg/semconv
+COPY pkg/aggregator pkg/aggregator
+COPY apps/playlist apps/playlist
+
 
 RUN go mod download
 RUN if [[ "$BINGO" = "true" ]]; then \
@@ -95,6 +96,19 @@ COPY .github .github
 ENV COMMIT_SHA=${COMMIT_SHA}
 ENV BUILD_BRANCH=${BUILD_BRANCH}
 
+RUN make gen-go WIRE_TAGS=${WIRE_TAGS}
+
+FROM ${GO_SRC} AS go-build-amd64
+RUN make build-go GO_BUILD_TAGS=${GO_BUILD_TAGS} WIRE_TAGS=${WIRE_TAGS}
+
+FROM ${GO_SRC} AS go-build-arm64
+
+RUN apt-get update && \
+    apt-get -y install gcc-aarch64-linux-gnu;
+
+ENV GOARCH=arm64
+ENV CC=aarch64-linux-gnu-gcc
+
 RUN make build-go GO_BUILD_TAGS=${GO_BUILD_TAGS} WIRE_TAGS=${WIRE_TAGS}
 
 # From-tarball build stage
@@ -110,7 +124,9 @@ COPY ${GRAFANA_TGZ} /tmp/grafana.tar.gz
 RUN tar x -z -f /tmp/grafana.tar.gz --strip-components=1
 
 # helpers for COPY --from
-FROM ${GO_SRC} AS go-src
+
+ARG TARGETARCH
+FROM go-build-${TARGETARCH} AS go-src
 FROM ${JS_SRC} AS js-src
 
 # Final stage
@@ -138,7 +154,7 @@ RUN if grep -i -q alpine /etc/issue; then \
     elif grep -i -q ubuntu /etc/issue; then \
       DEBIAN_FRONTEND=noninteractive && \
       apt-get update && \
-      apt-get install -y ca-certificates curl tzdata musl && \
+      apt-get install -y ca-certificates curl tzdata musl gpgv && \
       apt-get autoremove -y && \
       rm -rf /var/lib/apt/lists/*; \
     else \
@@ -204,3 +220,34 @@ COPY ${RUN_SH} /run.sh
 
 USER "$GF_UID"
 ENTRYPOINT [ "/run.sh" ]
+
+
+FROM grafana/grafana:${GF_VERSION}-ubuntu AS groundcover
+
+COPY --from=go-src /tmp/grafana/bin/grafana* /tmp/grafana/bin/*/grafana* ./bin/
+COPY --from=js-src /tmp/grafana/public ./public
+
+USER 0
+
+ARG TARGETARCH
+
+ENV GF_PLUGIN_DIR="/usr/share/grafana/plugins" \
+    GF_PATHS_PLUGINS="/usr/share/grafana/plugins"
+
+RUN apt-get update && \
+    apt-get install -y unzip gpgv openssl libssl3 && \
+    apt-get autoremove -y && \
+    rm -rf /var/lib/apt/lists/*
+
+COPY grafana-clickhouse-datasource-linux-${TARGETARCH}.zip /tmp/grafana-clickhouse-datasource.zip
+COPY victoriametrics-metrics-datasource-linux-${TARGETARCH}.zip /tmp/victoriametrics-metrics-datasource.zip
+
+RUN mkdir -p ${GF_PLUGIN_DIR} && \
+    chmod -R 777 ${GF_PLUGIN_DIR} && \
+    unzip /tmp/grafana-clickhouse-datasource.zip -d ${GF_PLUGIN_DIR} && \
+    rm /tmp/grafana-clickhouse-datasource.zip && \
+    unzip /tmp/victoriametrics-metrics-datasource.zip -d ${GF_PLUGIN_DIR} && \
+    rm /tmp/victoriametrics-metrics-datasource.zip && \
+    grafana cli plugins install marcusolsson-treemap-panel 2.0.1
+
+USER "$GF_UID"
