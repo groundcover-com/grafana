@@ -321,6 +321,7 @@ func (st *Manager) ProcessEvalResults(
 	logger := st.log.FromContext(ctx)
 	logger.Debug("State manager processing evaluation results", "resultCount", len(results))
 	states := st.setNextStateForRule(ctx, alertRule, results, extraLabels, logger)
+	setConfiguredThreshold(alertRule, states)
 
 	staleStates := st.deleteStaleStatesFromCache(ctx, logger, evaluatedAt, alertRule)
 	span.AddEvent("results processed", trace.WithAttributes(
