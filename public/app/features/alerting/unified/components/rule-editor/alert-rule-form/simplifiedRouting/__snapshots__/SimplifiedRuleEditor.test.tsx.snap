@@ -136,10 +136,10 @@ exports[`Can create a new grafana managed alert using simplified routing can cre
                 "refId": "C",
               },
             ],
-            "exec_err_state": "Error",
+            "exec_err_state": "OK",
             "is_paused": false,
             "missing_series_evals_to_resolve": 0,
-            "no_data_state": "NoData",
+            "no_data_state": "OK",
             "notification_settings": {
               "receiver": "lotsa-emails",
             },
@@ -302,7 +302,7 @@ exports[`Can create a new grafana managed alert using simplified routing switch 
                 "refId": "C",
               },
             ],
-            "exec_err_state": "Error",
+            "exec_err_state": "OK",
             "is_paused": false,
             "metadata": {
               "editor_settings": {
@@ -311,7 +311,7 @@ exports[`Can create a new grafana managed alert using simplified routing switch 
               },
             },
             "missing_series_evals_to_resolve": 0,
-            "no_data_state": "NoData",
+            "no_data_state": "OK",
             "title": "my great new rule",
           },
           "keep_firing_for": "0s",
@@ -471,7 +471,7 @@ exports[`Can create a new grafana managed alert using simplified routing switch 
                 "refId": "C",
               },
             ],
-            "exec_err_state": "Error",
+            "exec_err_state": "OK",
             "is_paused": false,
             "metadata": {
               "editor_settings": {
@@ -480,7 +480,7 @@ exports[`Can create a new grafana managed alert using simplified routing switch 
               },
             },
             "missing_series_evals_to_resolve": 0,
-            "no_data_state": "NoData",
+            "no_data_state": "OK",
             "notification_settings": {
               "receiver": "lotsa-emails",
             },
@@ -643,7 +643,7 @@ exports[`Can create a new grafana managed alert using simplified routing switch 
                 "refId": "C",
               },
             ],
-            "exec_err_state": "Error",
+            "exec_err_state": "OK",
             "is_paused": false,
             "metadata": {
               "editor_settings": {
@@ -652,7 +652,7 @@ exports[`Can create a new grafana managed alert using simplified routing switch 
               },
             },
             "missing_series_evals_to_resolve": 0,
-            "no_data_state": "NoData",
+            "no_data_state": "OK",
             "title": "my great new rule",
           },
           "keep_firing_for": "0s",
@@ -812,7 +812,7 @@ exports[`Can create a new grafana managed alert using simplified routing switch 
                 "refId": "C",
               },
             ],
-            "exec_err_state": "Error",
+            "exec_err_state": "OK",
             "is_paused": false,
             "metadata": {
               "editor_settings": {
@@ -821,7 +821,7 @@ exports[`Can create a new grafana managed alert using simplified routing switch 
               },
             },
             "missing_series_evals_to_resolve": 0,
-            "no_data_state": "NoData",
+            "no_data_state": "OK",
             "notification_settings": {
               "receiver": "lotsa-emails",
             },
