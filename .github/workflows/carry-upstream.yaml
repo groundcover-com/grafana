@@ -1,0 +1,63 @@
+name: carry-upstream
+# Carries the groundcover patch stack onto an upstream Grafana tag (see .groundcover/README.md).
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Upstream Grafana tag, e.g. v12.4.12
+        required: true
+      from:
+        description: Stack branch to carry
+        required: true
+        default: gc/v11.3.7
+permissions:
+  contents: write
+jobs:
+  carry:
+    runs-on: ubuntu-latest
+    env:
+      TAG: ${{ inputs.tag }}
+      FROM: ${{ inputs.from }}
+      UPSTREAM_URL: https://github.com/grafana/grafana.git
+    steps:
+      - name: Validate inputs
+        run: |
+          [[ $TAG =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "bad tag: $TAG"; exit 1; }
+          [[ $FROM =~ ^gc/v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "bad stack branch: $FROM"; exit 1; }
+      - name: Free disk space
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: false
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.from }}
+          fetch-depth: 200
+          # Pushing upstream history touches .github/workflows, which needs a token with the workflow scope.
+          token: ${{ secrets.CARRY_TOKEN || github.token }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+          cache: false
+      - name: Fetch upstream tags
+        run: |
+          base=$(cat .groundcover/upstream)
+          git fetch -q --no-tags --depth=1 "$UPSTREAM_URL" "+refs/tags/$base:refs/tags/$base"
+          git fetch -q --no-tags --shallow-exclude="$base" "$UPSTREAM_URL" "+refs/tags/$TAG:refs/tags/$TAG"
+      - name: Carry
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          set +e
+          .groundcover/carry.sh "$TAG" 2>&1 | tee carry.log
+          status=${PIPESTATUS[0]}
+          set -e
+          { echo '```'; tail -n 60 carry.log; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$status" = 0 ]; then
+            git push -u origin "gc/$TAG"
+          elif [ "$status" = 2 ]; then
+            git push -f origin "HEAD:refs/heads/gc/$TAG-wip"
+            echo "Stopped on conflicts; picks so far pushed to gc/$TAG-wip. Rerun locally to resolve." >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          else
+            exit "$status"
+          fi
