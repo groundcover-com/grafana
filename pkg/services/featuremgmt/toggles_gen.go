@@ -411,10 +411,6 @@ const (
 	// Enable grafana dataplane aggregator
 	FlagDataplaneAggregator = "dataplaneAggregator"
 
-	// FlagDisableInstanceStore
-	// Disable instance store
-	FlagDisableInstanceStore = "disableInstanceStore"
-
 	// FlagNewFiltersUI
 	// Enables new combobox style UI for the Ad hoc filters variable in scenes architecture
 	FlagNewFiltersUI = "newFiltersUI"
@@ -829,4 +825,8 @@ const (
 	// FlagLibraryElementsFolderTreeViaSearch
 	// Build the library-elements folder tree by listing folders via the unified-storage search index (lightweight UID&#43;parent refs) instead of a full object list, avoiding paged object-list round-trips on GET /api/library-elements.
 	FlagLibraryElementsFolderTreeViaSearch = "libraryElementsFolderTreeViaSearch"
+
+	// FlagDisableInstanceStore
+	// Disable the use of instance store
+	FlagDisableInstanceStore = "disableInstanceStore"
 )

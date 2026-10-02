@@ -1497,4 +1497,9 @@ export interface FeatureToggles {
   * @default false
   */
   libraryElementsFolderTreeViaSearch?: boolean;
+  /**
+  * Disable the use of instance store
+  * @default false
+  */
+  disableInstanceStore?: boolean;
 }

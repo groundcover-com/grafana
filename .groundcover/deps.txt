@@ -3,7 +3,7 @@
 go 1.25.0
 # groundcover-com/alerting (Mutes patch) for each upstream grafana/alerting version: alerting <upstream> <fork>
 alerting v0.0.0-20250228212059-bc4a3c128098 v0.0.4
-alerting v0.0.0-20260206150146-b5f69c55f91a v0.0.0-20261002034431-adecbc7a85d3
+alerting v0.0.0-20260206150146-b5f69c55f91a v0.0.7
 cel.dev/expr v0.25.1
 cloud.google.com/go/compute/metadata v0.9.0
 github.com/GoogleCloudPlatform/opentelemetry-operations-go/detectors/gcp v1.30.0
