@@ -382,6 +382,7 @@ func (ng *AlertNG) init() error {
 	if err != nil {
 		return err
 	}
+	historian.AttachMuteChecker(history, ng.MultiOrgAlertmanager)
 
 	ng.InstanceStore, ng.StartupInstanceReader = initInstanceStore(ng.store.SQLStore, ng.Log, ng.FeatureToggles)
 
@@ -712,6 +713,7 @@ func configureHistorianBackend(
 		return historian.NewAnnotationBackend(annotationBackendLogger, store, rs, met, ac, annotationMaxTagsLength), nil
 	}
 	if backend == historian.BackendTypeLoki {
+		l.Info(fmt.Sprintf("loki state history backend is enabled, log all changes %v, otel enabled %v", cfg.LogAll, cfg.OtelEnabled))
 		lcfg, err := lokiconfig.NewLokiConfig(cfg.LokiSettings)
 		if err != nil {
 			return nil, fmt.Errorf("invalid remote loki configuration: %w", err)
@@ -722,6 +724,7 @@ func configureHistorianBackend(
 		logCtx := log.WithContextualAttributes(ctx, []any{"backend", "loki"})
 		lokiBackendLogger := log.New("ngalert.state.historian").FromContext(logCtx)
 		backend := historian.NewRemoteLokiBackend(lokiBackendLogger, lcfg, req, met, tracer, rs, ac)
+		historian.ApplyGCSettings(backend, cfg, met)
 
 		testConnCtx, cancelFunc := context.WithTimeout(ctx, 10*time.Second)
 		defer cancelFunc()
