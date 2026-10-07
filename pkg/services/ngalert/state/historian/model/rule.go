@@ -34,7 +34,6 @@ func NewRuleMeta(r *models.AlertRule, logger log.Logger) RuleMeta {
 		}
 		panelID = pid
 	}
-
 	return RuleMeta{
 		ID:           r.ID,
 		OrgID:        r.OrgID,

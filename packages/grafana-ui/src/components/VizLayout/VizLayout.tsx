@@ -8,7 +8,7 @@ import { LegendPlacement } from '@grafana/schema';
 
 import { useStyles2, useTheme2 } from '../../themes/ThemeContext';
 import { getFocusStyles } from '../../themes/mixins';
-import { CustomScrollbar } from '../CustomScrollbar/CustomScrollbar';
+import { ScrollContainer } from '../ScrollContainer/ScrollContainer';
 
 /**
  * @beta
@@ -29,6 +29,8 @@ export interface VizLayoutComponentType extends FC<VizLayoutProps> {
 
 /**
  * @beta
+ *
+ * https://developers.grafana.com/ui/latest/index.html?path=/docs/plugins-vizlayout--docs
  */
 export const VizLayout: VizLayoutComponentType = ({ width, height, legend, children }) => {
   const theme = useTheme2();
@@ -98,7 +100,7 @@ export const VizLayout: VizLayoutComponentType = ({ width, height, legend, child
     <div style={containerStyle}>
       <div className={styles.viz}>{size && children(size.width, size.height)}</div>
       <div style={legendStyle} ref={legendRef}>
-        <CustomScrollbar hideHorizontalTrack>{legend}</CustomScrollbar>
+        <ScrollContainer>{legend}</ScrollContainer>
       </div>
     </div>
   );

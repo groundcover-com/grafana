@@ -41,9 +41,10 @@ func ProvideTeamPermissions(
 	teamService team.Service, userService user.Service, actionSetService resourcepermissions.ActionSetService,
 ) (*TeamPermissionsService, error) {
 	options := resourcepermissions.Options{
-		Resource:          "teams",
-		ResourceAttribute: "id",
-		OnlyManaged:       true,
+		Resource:           "teams",
+		ResourceAttribute:  "id",
+		OnlyManaged:        true,
+		ResourceTranslator: team.UIDToIDHandler(teamService),
 		ResourceValidator: func(ctx context.Context, orgID int64, resourceID string) error {
 			ctx, span := tracer.Start(ctx, "accesscontrol.ossaccesscontrol.ProvideTeamerPermissions.ResourceValidator")
 			defer span.End()
@@ -72,8 +73,8 @@ func ProvideTeamPermissions(
 			"Member": TeamMemberActions,
 			"Admin":  TeamAdminActions,
 		},
-		ReaderRoleName: "Team permission reader",
-		WriterRoleName: "Team permission writer",
+		ReaderRoleName: "Permission reader",
+		WriterRoleName: "Permission writer",
 		RoleGroup:      "Teams",
 		OnSetUser: func(session *db.Session, orgID int64, user accesscontrol.User, resourceID, permission string) error {
 			teamId, err := strconv.ParseInt(resourceID, 10, 64)

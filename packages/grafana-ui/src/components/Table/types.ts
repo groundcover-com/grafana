@@ -2,10 +2,20 @@ import { Property } from 'csstype';
 import { FC } from 'react';
 import { CellProps, Column, Row, TableState, UseExpandedRowProps } from 'react-table';
 
-import { DataFrame, Field, KeyValue, SelectableValue, TimeRange, FieldConfigSource } from '@grafana/data';
+import {
+  DataFrame,
+  Field,
+  KeyValue,
+  SelectableValue,
+  TimeRange,
+  FieldConfigSource,
+  ActionModel,
+  InterpolateFunction,
+} from '@grafana/data';
 import * as schema from '@grafana/schema';
 
-import { TableStyles } from './styles';
+import { TableCellInspectorMode } from './TableCellInspector';
+import { TableStyles } from './TableRT/styles';
 
 export {
   type FieldTextAlignment,
@@ -24,6 +34,8 @@ export interface TableRow {
   [x: string]: any;
 }
 
+export type InspectCell = { value: any; mode: TableCellInspectorMode };
+
 export const FILTER_FOR_OPERATOR = '=';
 export const FILTER_OUT_OPERATOR = '!=';
 export type AdHocFilterOperator = typeof FILTER_FOR_OPERATOR | typeof FILTER_OUT_OPERATOR;
@@ -31,6 +43,7 @@ export type AdHocFilterItem = { key: string; value: string; operator: AdHocFilte
 export type TableFilterActionCallback = (item: AdHocFilterItem) => void;
 export type TableColumnResizeActionCallback = (fieldDisplayName: string, width: number) => void;
 export type TableSortByActionCallback = (state: TableSortByFieldState[]) => void;
+export type TableInspectCellCallback = (state: InspectCell) => void;
 
 export interface TableSortByFieldState {
   displayName: string;
@@ -44,6 +57,8 @@ export interface TableCellProps extends CellProps<any> {
   onCellFilterAdded?: TableFilterActionCallback;
   innerWidth: number;
   frame: DataFrame;
+  actions?: ActionModel[]; // unused in NG
+  setInspectCell?: TableInspectCellCallback;
 }
 
 export type CellComponent = FC<TableCellProps>;
@@ -75,7 +90,14 @@ export interface GrafanaTableState extends TableState {
 
 export interface GrafanaTableRow extends Row, UseExpandedRowProps<{}> {}
 
-export interface Props {
+export interface TableStateReducerProps {
+  onColumnResize?: TableColumnResizeActionCallback;
+  onSortByChange?: TableSortByActionCallback;
+  data: DataFrame;
+}
+
+// export interface Props {
+export interface TableRTProps {
   ariaLabel?: string;
   data: DataFrame;
   width: number;
@@ -100,6 +122,8 @@ export interface Props {
   // The index of the field value that the table will initialize scrolled to
   initialRowIndex?: number;
   fieldConfig?: FieldConfigSource;
+  getActions?: GetActionsFunction;
+  replaceVariables?: InterpolateFunction;
 }
 
 /**
@@ -148,3 +172,10 @@ export interface CellColors {
   bgColor?: string;
   bgHoverColor?: string;
 }
+
+export type GetActionsFunction = (
+  frame: DataFrame,
+  field: Field,
+  rowIndex: number,
+  replaceVariables?: InterpolateFunction
+) => ActionModel[];

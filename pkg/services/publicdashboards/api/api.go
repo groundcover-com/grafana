@@ -22,6 +22,12 @@ import (
 	"github.com/grafana/grafana/pkg/web"
 )
 
+// The struct size the request body unmarshals to is a few bytes and much deviation from that would mean a malformed body.
+const (
+	maxQueryBodySize  = 10 * 1024 // 10 KiB
+	maxMutateBodySize = 10 * 1024 // 10 KiB
+)
+
 type Api struct {
 	PublicDashboardService publicdashboards.Service
 	Middleware             publicdashboards.Middleware
@@ -55,12 +61,8 @@ func ProvideApi(
 	}
 
 	// register endpoints if the feature is enabled
-	if features.IsEnabledGlobally(featuremgmt.FlagPublicDashboards) && cfg.PublicDashboardsEnabled {
+	if cfg.PublicDashboardsEnabled {
 		api.RegisterAPIEndpoints()
-	}
-
-	if !features.IsEnabledGlobally(featuremgmt.FlagPublicDashboards) {
-		api.log.Warn("[Deprecated] The publicDashboards feature toggle will be removed in Grafana v11. To disable the public dashboards feature, use the public_dashboards.enabled setting.")
 	}
 
 	return api
@@ -105,7 +107,7 @@ func (api *Api) RegisterAPIEndpoints() {
 		routing.Wrap(api.DeletePublicDashboard))
 }
 
-// swagger:route GET /dashboards/public-dashboards dashboard_public listPublicDashboards
+// swagger:route GET /dashboards/public-dashboards dashboards dashboard_public listPublicDashboards
 //
 //	Get list of public dashboards
 //
@@ -126,7 +128,7 @@ func (api *Api) ListPublicDashboards(c *contextmodel.ReqContext) response.Respon
 	}
 
 	resp, err := api.PublicDashboardService.FindAllWithPagination(c.Req.Context(), &PublicDashboardListQuery{
-		OrgID: c.SignedInUser.GetOrgID(),
+		OrgID: c.GetOrgID(),
 		Query: c.Query("query"),
 		Page:  page,
 		Limit: perPage,
@@ -139,7 +141,7 @@ func (api *Api) ListPublicDashboards(c *contextmodel.ReqContext) response.Respon
 	return response.JSON(http.StatusOK, resp)
 }
 
-// swagger:route GET /dashboards/uid/{dashboardUid}/public-dashboards dashboard_public getPublicDashboard
+// swagger:route GET /dashboards/uid/{dashboardUid}/public-dashboards dashboards dashboard_public getPublicDashboard
 //
 //	Get public dashboard by dashboardUid
 //
@@ -157,7 +159,7 @@ func (api *Api) GetPublicDashboard(c *contextmodel.ReqContext) response.Response
 		return response.Err(ErrPublicDashboardIdentifierNotSet.Errorf("GetPublicDashboard: no dashboard Uid for public dashboard specified"))
 	}
 
-	pd, err := api.PublicDashboardService.FindByDashboardUid(c.Req.Context(), c.SignedInUser.GetOrgID(), dashboardUid)
+	pd, err := api.PublicDashboardService.FindByDashboardUid(c.Req.Context(), c.GetOrgID(), dashboardUid)
 	if err != nil {
 		return response.Err(err)
 	}
@@ -169,7 +171,7 @@ func (api *Api) GetPublicDashboard(c *contextmodel.ReqContext) response.Response
 	return response.JSON(http.StatusOK, pd)
 }
 
-// swagger:route POST /dashboards/uid/{dashboardUid}/public-dashboards dashboard_public createPublicDashboard
+// swagger:route POST /dashboards/uid/{dashboardUid}/public-dashboards dashboards dashboard_public createPublicDashboard
 //
 //	Create public dashboard for a dashboard
 //
@@ -188,6 +190,8 @@ func (api *Api) CreatePublicDashboard(c *contextmodel.ReqContext) response.Respo
 	if !validation.IsValidShortUID(dashboardUid) {
 		return response.Err(ErrInvalidUid.Errorf("CreatePublicDashboard: invalid Uid %s", dashboardUid))
 	}
+
+	c.Req.Body = http.MaxBytesReader(c.Resp, c.Req.Body, maxMutateBodySize)
 
 	pdDTO := &PublicDashboardDTO{}
 	if err := web.Bind(c.Req, pdDTO); err != nil {
@@ -209,7 +213,7 @@ func (api *Api) CreatePublicDashboard(c *contextmodel.ReqContext) response.Respo
 	// Always set the orgID and userID from the session
 	dto := &SavePublicDashboardDTO{
 		UserId:          c.UserID,
-		OrgID:           c.SignedInUser.GetOrgID(),
+		OrgID:           c.GetOrgID(),
 		DashboardUid:    dashboardUid,
 		PublicDashboard: pdDTO,
 	}
@@ -223,7 +227,7 @@ func (api *Api) CreatePublicDashboard(c *contextmodel.ReqContext) response.Respo
 	return response.JSON(http.StatusOK, pd)
 }
 
-// swagger:route PATCH /dashboards/uid/{dashboardUid}/public-dashboards/{uid} dashboard_public updatePublicDashboard
+// swagger:route PATCH /dashboards/uid/{dashboardUid}/public-dashboards/{uid} dashboards dashboard_public updatePublicDashboard
 //
 //	Update public dashboard for a dashboard
 //
@@ -248,6 +252,8 @@ func (api *Api) UpdatePublicDashboard(c *contextmodel.ReqContext) response.Respo
 		return response.Err(ErrInvalidUid.Errorf("UpdatePublicDashboard: invalid Uid %s", uid))
 	}
 
+	c.Req.Body = http.MaxBytesReader(c.Resp, c.Req.Body, maxMutateBodySize)
+
 	pdDTO := &PublicDashboardDTO{}
 	if err := web.Bind(c.Req, pdDTO); err != nil {
 		return response.Err(ErrBadRequest.Errorf("UpdatePublicDashboard: bad request data %v", err))
@@ -257,7 +263,7 @@ func (api *Api) UpdatePublicDashboard(c *contextmodel.ReqContext) response.Respo
 	dto := SavePublicDashboardDTO{
 		Uid:             uid,
 		UserId:          c.UserID,
-		OrgID:           c.SignedInUser.GetOrgID(),
+		OrgID:           c.GetOrgID(),
 		DashboardUid:    dashboardUid,
 		PublicDashboard: pdDTO,
 	}
@@ -271,7 +277,7 @@ func (api *Api) UpdatePublicDashboard(c *contextmodel.ReqContext) response.Respo
 	return response.JSON(http.StatusOK, pd)
 }
 
-// swagger:route DELETE /dashboards/uid/{dashboardUid}/public-dashboards/{uid} dashboard_public deletePublicDashboard
+// swagger:route DELETE /dashboards/uid/{dashboardUid}/public-dashboards/{uid} dashboards dashboard_public deletePublicDashboard
 //
 //	Delete public dashboard for a dashboard
 //
@@ -292,7 +298,7 @@ func (api *Api) DeletePublicDashboard(c *contextmodel.ReqContext) response.Respo
 		return response.Err(ErrInvalidUid.Errorf("DeletePublicDashboard: invalid dashboard Uid %s", dashboardUid))
 	}
 
-	err := api.PublicDashboardService.Delete(c.Req.Context(), uid, dashboardUid)
+	err := api.PublicDashboardService.Delete(c.Req.Context(), c.GetOrgID(), uid, dashboardUid)
 	if err != nil {
 		return response.Err(err)
 	}

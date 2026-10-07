@@ -3,111 +3,168 @@ package server
 import (
 	"context"
 	"fmt"
-	"net/http"
+	"strings"
+	"sync"
 	"time"
 
+	"github.com/fullstorydev/grpchan/inprocgrpc"
+	authzv1 "github.com/grafana/authlib/authz/proto/v1"
 	openfgav1 "github.com/openfga/api/proto/openfga/v1"
-	httpmiddleware "github.com/openfga/openfga/pkg/middleware/http"
-	"github.com/openfga/openfga/pkg/server"
-	serverErrors "github.com/openfga/openfga/pkg/server/errors"
 	"github.com/openfga/openfga/pkg/storage"
+	"github.com/prometheus/client_golang/prometheus"
+	"google.golang.org/protobuf/types/known/wrapperspb"
 
-	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
-	"github.com/rs/cors"
-	"go.uber.org/zap/zapcore"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
-	healthv1pb "google.golang.org/grpc/health/grpc_health_v1"
-	"google.golang.org/grpc/status"
-
+	dashboardV2alpha1 "github.com/grafana/grafana/apps/dashboard/pkg/apis/dashboard/v2alpha1"
+	dashboardV2beta1 "github.com/grafana/grafana/apps/dashboard/pkg/apis/dashboard/v2beta1"
+	"github.com/grafana/grafana/pkg/infra/db"
+	"github.com/grafana/grafana/pkg/infra/localcache"
 	"github.com/grafana/grafana/pkg/infra/log"
-	"github.com/grafana/grafana/pkg/services/grpcserver"
+	"github.com/grafana/grafana/pkg/infra/tracing"
+	authzextv1 "github.com/grafana/grafana/pkg/services/authz/proto/v1"
+	"github.com/grafana/grafana/pkg/services/authz/zanzana/common"
+	zStore "github.com/grafana/grafana/pkg/services/authz/zanzana/store"
 	"github.com/grafana/grafana/pkg/setting"
-
-	zlogger "github.com/grafana/grafana/pkg/services/authz/zanzana/logger"
 )
 
-func New(store storage.OpenFGADatastore, logger log.Logger) (*server.Server, error) {
-	// FIXME(kalleep): add support for more options, tracing etc
-	opts := []server.OpenFGAServiceV1Option{
-		server.WithDatastore(store),
-		server.WithLogger(zlogger.New(logger)),
-	}
+const cacheCleanInterval = 2 * time.Minute
 
-	// FIXME(kalleep): Interceptors
-	// We probably need to at least need to add store id interceptor also
-	// would be nice to inject our own requestid?
-	srv, err := server.NewServerWithOpts(opts...)
-	if err != nil {
-		return nil, err
-	}
+var _ authzv1.AuthzServiceServer = (*Server)(nil)
+var _ authzextv1.AuthzExtentionServiceServer = (*Server)(nil)
 
-	return srv, nil
+type OpenFGAServer interface {
+	openfgav1.OpenFGAServiceServer
+	IsReady(ctx context.Context) (bool, error)
 }
 
-// StartOpenFGAHttpSever starts HTTP server which allows to use fga cli.
-func StartOpenFGAHttpSever(cfg *setting.Cfg, srv grpcserver.Provider, logger log.Logger) error {
-	dialOpts := []grpc.DialOption{
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-	}
+type Server struct {
+	authzv1.UnimplementedAuthzServiceServer
+	authzextv1.UnimplementedAuthzExtentionServiceServer
 
-	addr := srv.GetAddress()
-	// Wait until GRPC server is initialized
-	ticker := time.NewTicker(100 * time.Millisecond)
-	defer ticker.Stop()
-	maxRetries := 100
-	retries := 0
-	for addr == "" && retries < maxRetries {
-		<-ticker.C
-		addr = srv.GetAddress()
-		retries++
-	}
-	if addr == "" {
-		return fmt.Errorf("failed to start HTTP server: GRPC server unavailable")
-	}
+	openFGAServer OpenFGAServer
+	openFGAClient openfgav1.OpenFGAServiceClient
+	store         storage.OpenFGADatastore
 
-	conn, err := grpc.NewClient(addr, dialOpts...)
+	cfg      setting.ZanzanaServerSettings
+	stores   map[string]storeInfo
+	storesMU *sync.Mutex
+	cache    *localcache.CacheService
+
+	logger  log.Logger
+	tracer  tracing.Tracer
+	metrics *metrics
+}
+
+type storeInfo struct {
+	ID      string
+	ModelID string
+}
+
+func NewEmbeddedZanzanaServer(cfg *setting.Cfg, db db.DB, logger log.Logger, tracer tracing.Tracer, reg prometheus.Registerer) (*Server, error) {
+	store, err := zStore.NewEmbeddedStore(cfg, db, logger)
 	if err != nil {
-		return fmt.Errorf("unable to dial GRPC: %w", err)
+		return nil, fmt.Errorf("failed to start zanzana: %w", err)
 	}
 
-	muxOpts := []runtime.ServeMuxOption{
-		runtime.WithForwardResponseOption(httpmiddleware.HTTPResponseModifier),
-		runtime.WithErrorHandler(func(c context.Context,
-			sr *runtime.ServeMux, mm runtime.Marshaler, w http.ResponseWriter, r *http.Request, e error) {
-			intCode := serverErrors.ConvertToEncodedErrorCode(status.Convert(e))
-			httpmiddleware.CustomHTTPErrorHandler(c, w, r, serverErrors.NewEncodedError(intCode, e.Error()))
-		}),
-		runtime.WithStreamErrorHandler(func(ctx context.Context, e error) *status.Status {
-			intCode := serverErrors.ConvertToEncodedErrorCode(status.Convert(e))
-			encodedErr := serverErrors.NewEncodedError(intCode, e.Error())
-			return status.Convert(encodedErr)
-		}),
-		runtime.WithHealthzEndpoint(healthv1pb.NewHealthClient(conn)),
-		runtime.WithOutgoingHeaderMatcher(func(s string) (string, bool) { return s, true }),
-	}
-	mux := runtime.NewServeMux(muxOpts...)
-	if err := openfgav1.RegisterOpenFGAServiceHandler(context.TODO(), mux, conn); err != nil {
-		return fmt.Errorf("failed to register gateway handler: %w", err)
+	openfga, err := NewOpenFGAServer(cfg.ZanzanaServer, store)
+	if err != nil {
+		return nil, fmt.Errorf("failed to start zanzana: %w", err)
 	}
 
-	httpServer := &http.Server{
-		Addr: cfg.Zanzana.HttpAddr,
-		Handler: cors.New(cors.Options{
-			AllowedOrigins:   []string{"*"},
-			AllowCredentials: true,
-			AllowedHeaders:   []string{"*"},
-			AllowedMethods: []string{http.MethodGet, http.MethodPost,
-				http.MethodHead, http.MethodPatch, http.MethodDelete, http.MethodPut},
-		}).Handler(mux),
-		ReadHeaderTimeout: 30 * time.Second,
+	return newServer(cfg, openfga, store, logger, tracer, reg)
+}
+
+func NewZanzanaServer(cfg *setting.Cfg, logger log.Logger, tracer tracing.Tracer, reg prometheus.Registerer) (*Server, error) {
+	store, err := zStore.NewStore(cfg, logger)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initilize zanana store: %w", err)
 	}
-	go func() {
-		err = httpServer.ListenAndServe()
-		if err != nil {
-			logger.Error("failed to start http server", zapcore.Field{Key: "err", Type: zapcore.ErrorType, Interface: err})
-		}
-	}()
-	logger.Info(fmt.Sprintf("OpenFGA HTTP server listening on '%s'...", httpServer.Addr))
-	return nil
+
+	openfgaServer, err := NewOpenFGAServer(cfg.ZanzanaServer, store)
+	if err != nil {
+		return nil, fmt.Errorf("failed to start zanzana: %w", err)
+	}
+
+	return newServer(cfg, openfgaServer, store, logger, tracer, reg)
+}
+
+func newServer(cfg *setting.Cfg, openfga OpenFGAServer, store storage.OpenFGADatastore, logger log.Logger, tracer tracing.Tracer, reg prometheus.Registerer) (*Server, error) {
+	channel := &inprocgrpc.Channel{}
+	openfgav1.RegisterOpenFGAServiceServer(channel, openfga)
+	openFGAClient := openfgav1.NewOpenFGAServiceClient(channel)
+
+	zanzanaCfg := cfg.ZanzanaServer
+
+	s := &Server{
+		openFGAServer: openfga,
+		openFGAClient: openFGAClient,
+		store:         store,
+		storesMU:      &sync.Mutex{},
+		stores:        make(map[string]storeInfo),
+		cfg:           zanzanaCfg,
+		cache:         localcache.New(zanzanaCfg.CacheSettings.CheckQueryCacheTTL, cacheCleanInterval),
+		logger:        logger,
+		tracer:        tracer,
+		metrics:       newZanzanaServerMetrics(reg),
+	}
+
+	return s, nil
+}
+
+func (s *Server) GetOpenFGAServer() openfgav1.OpenFGAServiceServer {
+	return s.openFGAServer
+}
+
+func (s *Server) IsHealthy(ctx context.Context) (bool, error) {
+	_, err := s.openFGAClient.ListStores(ctx, &openfgav1.ListStoresRequest{
+		PageSize: wrapperspb.Int32(1),
+	})
+	return err == nil, nil
+}
+
+// GetStoreInfo returns store information for a given namespace.
+// This is used by the reconciler to access store IDs for direct operations.
+func (s *Server) GetStoreInfo(ctx context.Context, namespace string) (*storeInfo, error) {
+	return s.getStoreInfo(ctx, namespace)
+}
+
+func (s *Server) Close() {
+	s.store.Close()
+}
+
+func (s *Server) getContextuals(subject string) (*openfgav1.ContextualTupleKeys, error) {
+	contextuals := make([]*openfgav1.TupleKey, 0)
+
+	if strings.HasPrefix(subject, common.TypeRenderService+":") {
+		contextuals = append(
+			contextuals,
+			&openfgav1.TupleKey{
+				User:     subject,
+				Relation: common.RelationSetView,
+				Object: common.NewGroupResourceIdent(
+					dashboardV2alpha1.DashboardResourceInfo.GroupResource().Group,
+					dashboardV2alpha1.DashboardResourceInfo.GroupResource().Resource,
+					"",
+				),
+			},
+		)
+
+		contextuals = append(
+			contextuals,
+			&openfgav1.TupleKey{
+				User:     subject,
+				Relation: common.RelationSetView,
+				Object: common.NewGroupResourceIdent(
+					dashboardV2beta1.DashboardResourceInfo.GroupResource().Group,
+					dashboardV2beta1.DashboardResourceInfo.GroupResource().Resource,
+					"",
+				),
+			},
+		)
+	}
+
+	if len(contextuals) > 0 {
+		return &openfgav1.ContextualTupleKeys{TupleKeys: contextuals}, nil
+	}
+
+	return nil, nil
 }
