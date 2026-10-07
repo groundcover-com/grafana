@@ -1,0 +1,66 @@
+# Minimum module versions carried on top of upstream (security bumps and groundcover deps).
+# carry.sh raises any go.mod in the workspace that requires a module below its pin; it never downgrades.
+go 1.25.0
+# groundcover-com/alerting (Mutes patch) for each upstream grafana/alerting version: alerting <upstream> <fork>
+alerting v0.0.0-20250228212059-bc4a3c128098 v0.0.4
+alerting v0.0.0-20260206150146-b5f69c55f91a v0.0.0-20261002034431-adecbc7a85d3
+cel.dev/expr v0.25.1
+cloud.google.com/go/compute/metadata v0.9.0
+github.com/GoogleCloudPlatform/opentelemetry-operations-go/detectors/gcp v1.30.0
+github.com/beevik/etree v1.6.0
+github.com/buger/jsonparser v1.1.2
+github.com/cespare/xxhash/v2 v2.3.0
+github.com/cncf/xds/go v0.0.0-20251210132809-ee656c7534f5
+github.com/envoyproxy/go-control-plane/envoy v1.36.0
+github.com/envoyproxy/protoc-gen-validate v1.3.0
+github.com/flosch/pongo2/v6 v6.0.0
+github.com/getkin/kin-openapi v0.144.0
+github.com/go-jose/go-jose/v3 v3.0.5
+github.com/go-jose/go-jose/v4 v4.1.4
+github.com/go-logr/logr v1.4.3
+github.com/go-logr/stdr v1.2.2
+github.com/go-openapi/jsonpointer v0.23.1
+github.com/go-openapi/swag/jsonname v0.26.0
+github.com/google/go-cmp v0.7.0
+github.com/google/uuid v1.6.0
+github.com/grafana/authlib/types v0.0.0-20251119142549-be091cf2f4d4
+github.com/grpc-ecosystem/grpc-gateway/v2 v2.27.1
+github.com/jackc/pgx/v5 v5.9.0
+github.com/mailru/easyjson v0.9.1
+github.com/oapi-codegen/oapi-codegen/v2 v2.8.0
+github.com/oasdiff/yaml v0.1.1
+github.com/oasdiff/yaml3 v0.0.14
+github.com/prometheus/client_model v0.6.2
+github.com/rogpeppe/go-internal v1.14.1
+github.com/russellhaering/goxmldsig v1.6.0
+github.com/santhosh-tekuri/jsonschema/v6 v6.0.2
+github.com/speakeasy-api/jsonpath v0.6.3
+github.com/speakeasy-api/openapi v1.24.0
+github.com/spiffe/go-spiffe/v2 v2.6.0
+github.com/stretchr/testify v1.11.1
+github.com/unknwon/log v0.0.0-20200308114134-929b1006e34a
+github.com/valyala/bytebufferpool v1.0.0
+go.opentelemetry.io/auto/sdk v1.2.1
+go.opentelemetry.io/contrib/detectors/gcp v1.39.0
+go.opentelemetry.io/otel v1.43.0
+go.opentelemetry.io/otel/metric v1.43.0
+go.opentelemetry.io/otel/sdk v1.43.0
+go.opentelemetry.io/otel/sdk/metric v1.43.0
+go.opentelemetry.io/otel/trace v1.43.0
+go.opentelemetry.io/proto/otlp v1.7.1
+golang.org/x/crypto v0.54.0
+golang.org/x/mod v0.38.0
+golang.org/x/net v0.57.0
+golang.org/x/oauth2 v0.34.0
+golang.org/x/sync v0.22.0
+golang.org/x/sys v0.47.0
+golang.org/x/telemetry v0.0.0-20260708182218-49f421fb7959
+golang.org/x/term v0.45.0
+golang.org/x/text v0.40.0
+golang.org/x/tools v0.48.0
+golang.org/x/tools/godoc v0.1.0-deprecated
+gonum.org/v1/gonum v0.16.0
+google.golang.org/genproto/googleapis/api v0.0.0-20251202230838-ff82c1b0f217
+google.golang.org/genproto/googleapis/rpc v0.0.0-20251202230838-ff82c1b0f217
+google.golang.org/grpc v1.79.3
+google.golang.org/protobuf v1.36.10

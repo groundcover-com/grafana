@@ -14,7 +14,7 @@ import (
 	"github.com/grafana/grafana/pkg/web"
 )
 
-// swagger:route GET /public/dashboards/{accessToken} dashboard_public viewPublicDashboard
+// swagger:route GET /public/dashboards/{accessToken} dashboards dashboard_public viewPublicDashboard
 //
 //	Get public dashboard for view
 //
@@ -39,7 +39,7 @@ func (api *Api) ViewPublicDashboard(c *contextmodel.ReqContext) response.Respons
 	return response.JSON(http.StatusOK, dto)
 }
 
-// swagger:route POST /public/dashboards/{accessToken}/panels/{panelId}/query dashboard_public queryPublicDashboard
+// swagger:route POST /public/dashboards/{accessToken}/panels/{panelId}/query dashboards dashboard_public queryPublicDashboard
 //
 //	Get results for a given panel on a public dashboard
 //
@@ -56,6 +56,13 @@ func (api *Api) QueryPublicDashboard(c *contextmodel.ReqContext) response.Respon
 	if !validation.IsValidAccessToken(accessToken) {
 		return response.Err(ErrInvalidAccessToken.Errorf("QueryPublicDashboard: invalid access token"))
 	}
+
+	_, err := api.PublicDashboardService.FindByAccessToken(c.Req.Context(), accessToken)
+	if err != nil {
+		return response.Err(err)
+	}
+
+	c.Req.Body = http.MaxBytesReader(c.Resp, c.Req.Body, maxQueryBodySize)
 
 	panelId, err := strconv.ParseInt(web.Params(c.Req)[":panelId"], 10, 64)
 	if err != nil {
@@ -75,7 +82,7 @@ func (api *Api) QueryPublicDashboard(c *contextmodel.ReqContext) response.Respon
 	return toJsonStreamingResponse(c.Req.Context(), api.features, resp)
 }
 
-// swagger:route GET /public/dashboards/{accessToken}/annotations dashboard_public getPublicAnnotations
+// swagger:route GET /public/dashboards/{accessToken}/annotations dashboards annotations dashboard_public getPublicAnnotations
 //
 //	Get annotations for a public dashboard
 //

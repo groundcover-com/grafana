@@ -69,7 +69,7 @@ func (api *ServiceAccountsAPI) ListTokens(ctx *contextmodel.ReqContext) response
 		return response.Error(http.StatusBadRequest, "Service Account ID is invalid", err)
 	}
 
-	orgID := ctx.SignedInUser.GetOrgID()
+	orgID := ctx.GetOrgID()
 	saTokens, err := api.service.ListTokens(ctx.Req.Context(), &serviceaccounts.GetSATokensQuery{
 		OrgID:            &orgID,
 		ServiceAccountID: &saID,
@@ -132,7 +132,10 @@ func (api *ServiceAccountsAPI) CreateToken(c *contextmodel.ReqContext) response.
 	}
 
 	// confirm service account exists
-	if _, err = api.service.RetrieveServiceAccount(c.Req.Context(), c.SignedInUser.GetOrgID(), saID); err != nil {
+	if _, err = api.service.RetrieveServiceAccount(c.Req.Context(), &serviceaccounts.GetServiceAccountQuery{
+		OrgID: c.GetOrgID(),
+		ID:    saID,
+	}); err != nil {
 		return response.ErrOrFallback(http.StatusInternalServerError, "Failed to retrieve service account", err)
 	}
 
@@ -142,7 +145,7 @@ func (api *ServiceAccountsAPI) CreateToken(c *contextmodel.ReqContext) response.
 	}
 
 	// Force affected service account to be the one referenced in the URL
-	cmd.OrgId = c.SignedInUser.GetOrgID()
+	cmd.OrgId = c.GetOrgID()
 
 	if api.cfg.ApiKeyMaxSecondsToLive != -1 {
 		if cmd.SecondsToLive == 0 {
@@ -154,6 +157,10 @@ func (api *ServiceAccountsAPI) CreateToken(c *contextmodel.ReqContext) response.
 	}
 
 	if api.cfg.SATokenExpirationDayLimit > 0 {
+		if cmd.SecondsToLive == 0 {
+			return response.Error(http.StatusBadRequest, "Cannot create token with no expiration date when service_accounts.token_expiration_day_limit is set", nil)
+		}
+
 		dayExpireLimit := time.Now().Add(time.Duration(api.cfg.SATokenExpirationDayLimit) * time.Hour * 24).Truncate(24 * time.Hour)
 		expirationDate := time.Now().Add(time.Duration(cmd.SecondsToLive) * time.Second).Truncate(24 * time.Hour)
 		if expirationDate.After(dayExpireLimit) {
@@ -205,7 +212,10 @@ func (api *ServiceAccountsAPI) DeleteToken(c *contextmodel.ReqContext) response.
 	}
 
 	// confirm service account exists
-	if _, err := api.service.RetrieveServiceAccount(c.Req.Context(), c.SignedInUser.GetOrgID(), saID); err != nil {
+	if _, err := api.service.RetrieveServiceAccount(c.Req.Context(), &serviceaccounts.GetServiceAccountQuery{
+		OrgID: c.GetOrgID(),
+		ID:    saID,
+	}); err != nil {
 		return response.ErrOrFallback(http.StatusInternalServerError, "Failed to retrieve service account", err)
 	}
 
@@ -214,7 +224,7 @@ func (api *ServiceAccountsAPI) DeleteToken(c *contextmodel.ReqContext) response.
 		return response.Error(http.StatusBadRequest, "Token ID is invalid", err)
 	}
 
-	if err = api.service.DeleteServiceAccountToken(c.Req.Context(), c.SignedInUser.GetOrgID(), saID, tokenID); err != nil {
+	if err = api.service.DeleteServiceAccountToken(c.Req.Context(), c.GetOrgID(), saID, tokenID); err != nil {
 		return response.ErrOrFallback(http.StatusInternalServerError, failedToDeleteMsg, err)
 	}
 

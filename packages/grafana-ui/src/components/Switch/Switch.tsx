@@ -4,7 +4,7 @@ import { forwardRef, HTMLProps, useRef } from 'react';
 
 import { GrafanaTheme2, deprecationWarning } from '@grafana/data';
 
-import { useStyles2 } from '../../themes';
+import { useStyles2 } from '../../themes/ThemeContext';
 import { getFocusStyles, getMouseFocusStyles } from '../../themes/mixins';
 import { Icon } from '../Icon/Icon';
 
@@ -14,6 +14,11 @@ export interface Props extends Omit<HTMLProps<HTMLInputElement>, 'value'> {
   invalid?: boolean;
 }
 
+/**
+ * Switch is a representation of an on-off state – like a light switch. So you can use Switch to toggle binary states.
+ *
+ * https://developers.grafana.com/ui/latest/index.html?path=/docs/inputs-switch--docs
+ */
 export const Switch = forwardRef<HTMLInputElement, Props>(
   ({ value, checked, onChange, id, label, disabled, invalid = false, ...inputProps }, ref) => {
     if (checked) {
@@ -27,6 +32,7 @@ export const Switch = forwardRef<HTMLInputElement, Props>(
       <div className={cx(styles.switch, invalid && styles.invalid)}>
         <input
           type="checkbox"
+          role="switch"
           disabled={disabled}
           checked={value}
           onChange={(event) => {
@@ -36,7 +42,7 @@ export const Switch = forwardRef<HTMLInputElement, Props>(
           {...inputProps}
           ref={ref}
         />
-        <label htmlFor={switchIdRef.current} aria-label={label ?? 'Toggle switch'}>
+        <label htmlFor={switchIdRef.current} aria-label={label}>
           <Icon name="check" size="xs" />
         </label>
       </div>
@@ -79,8 +85,8 @@ InlineSwitch.displayName = 'Switch';
 
 const getSwitchStyles = (theme: GrafanaTheme2, transparent?: boolean) => ({
   switch: css({
-    width: '32px',
-    height: '16px',
+    width: theme.spacing(4),
+    height: theme.spacing(2),
     position: 'relative',
     lineHeight: 1,
 
@@ -100,7 +106,7 @@ const getSwitchStyles = (theme: GrafanaTheme2, transparent?: boolean) => ({
         },
 
         svg: {
-          transform: 'translate3d(17px, -50%, 0)',
+          transform: `translate3d(${theme.spacing(2.25)}, -50%, 0)`,
           background: theme.colors.primary.contrastText,
           color: theme.colors.primary.main,
         },
@@ -136,7 +142,9 @@ const getSwitchStyles = (theme: GrafanaTheme2, transparent?: boolean) => ({
       borderRadius: theme.shape.radius.pill,
       background: theme.components.input.background,
       border: `1px solid ${theme.components.input.borderColor}`,
-      transition: 'all 0.3s ease',
+      [theme.transitions.handleMotion('no-preference')]: {
+        transition: 'all 0.3s ease',
+      },
 
       '&:hover': {
         borderColor: theme.components.input.borderHover,
@@ -146,14 +154,17 @@ const getSwitchStyles = (theme: GrafanaTheme2, transparent?: boolean) => ({
         position: 'absolute',
         display: 'block',
         color: 'transparent',
-        width: '12px',
-        height: '12px',
+        width: theme.spacing(1.5),
+        height: theme.spacing(1.5),
         borderRadius: theme.shape.radius.circle,
         background: theme.colors.text.secondary,
         boxShadow: theme.shadows.z1,
+        left: 0,
         top: '50%',
-        transform: 'translate3d(1px, -50%, 0)',
-        transition: 'transform 0.2s cubic-bezier(0.19, 1, 0.22, 1)',
+        transform: `translate3d(${theme.spacing(0.25)}, -50%, 0)`,
+        [theme.transitions.handleMotion('no-preference')]: {
+          transition: 'transform 0.2s cubic-bezier(0.19, 1, 0.22, 1)',
+        },
 
         '@media (forced-colors: active)': {
           border: `1px solid ${theme.colors.primary.contrastText}`,
@@ -179,9 +190,9 @@ const getSwitchStyles = (theme: GrafanaTheme2, transparent?: boolean) => ({
     },
   }),
   disabled: css({
-    backgroundColor: 'rgba(204, 204, 220, 0.04)',
+    backgroundColor: transparent ? 'transparent' : 'rgba(204, 204, 220, 0.04)',
     color: 'rgba(204, 204, 220, 0.6)',
-    border: '1px solid rgba(204, 204, 220, 0.04)',
+    border: `1px solid ${transparent ? 'transparent' : 'rgba(204, 204, 220, 0.04)'}`,
   }),
   inlineLabel: css({
     cursor: 'pointer',

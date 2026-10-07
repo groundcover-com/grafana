@@ -4,48 +4,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
-type Team struct {
-	metav1.TypeMeta   `json:",inline"`
-	metav1.ObjectMeta `json:"metadata,omitempty"`
-
-	Spec TeamSpec `json:"spec,omitempty"`
-}
-
-type TeamSpec struct {
-	Title string `json:"title,omitempty"`
-	Email string `json:"email,omitempty"`
-}
-
-// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
-type TeamList struct {
-	metav1.TypeMeta `json:",inline"`
-	metav1.ListMeta `json:"metadata,omitempty"`
-
-	Items []Team `json:"items,omitempty"`
-}
-
-// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
-type TeamBinding struct {
-	metav1.TypeMeta   `json:",inline"`
-	metav1.ObjectMeta `json:"metadata,omitempty"`
-
-	Spec TeamBindingSpec `json:"spec,omitempty"`
-}
-
-type TeamBindingSpec struct {
-	Subjects []TeamSubject `json:"subjects,omitempty"`
-	Team     TeamRef       `json:"team,omitempty"`
-}
-
-// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
-type TeamBindingList struct {
-	metav1.TypeMeta `json:",inline"`
-	metav1.ListMeta `json:"metadata,omitempty"`
-
-	Items []TeamBinding `json:"items,omitempty"`
-}
-
 type TeamSubject struct {
 	// Identity is a reference to the identity of this subject.
 	Identity IdentityRef `json:"identity"`
@@ -64,7 +22,7 @@ type TeamMemberList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
 
-	Items []TeamMember `json:"items,omitempty"`
+	Items []TeamMember `json:"items"`
 }
 
 type TeamMember struct {

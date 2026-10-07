@@ -1,6 +1,5 @@
-import { t } from 'i18next';
 import { isArray, negate } from 'lodash';
-import { ComponentProps, useCallback, useEffect, useRef, useState } from 'react';
+import { ComponentProps, useCallback, useEffect, useRef, useState, useImperativeHandle } from 'react';
 import * as React from 'react';
 import {
   default as ReactSelect,
@@ -13,10 +12,11 @@ import { default as AsyncCreatable } from 'react-select/async-creatable';
 import Creatable from 'react-select/creatable';
 
 import { SelectableValue, toOption } from '@grafana/data';
+import { t, Trans } from '@grafana/i18n';
 
-import { useTheme2 } from '../../themes';
+import { useTheme2 } from '../../themes/ThemeContext';
 import { Icon } from '../Icon/Icon';
-import { Spinner } from '../Spinner/Spinner';
+import { getPortalContainer } from '../Portal/Portal';
 
 import { CustomInput } from './CustomInput';
 import { DropdownIndicator } from './DropdownIndicator';
@@ -124,7 +124,7 @@ export function SelectBase<T, Rest = {}>({
   minMenuHeight,
   maxVisibleValues,
   menuPlacement = 'auto',
-  menuPosition,
+  menuPosition = 'fixed',
   menuShouldPortal = true,
   noOptionsMessage = t('grafana-ui.select.no-options-label', 'No options found'),
   onBlur,
@@ -152,15 +152,18 @@ export function SelectBase<T, Rest = {}>({
   isValidNewOption,
   formatOptionLabel,
   hideSelectedOptions,
+  selectRef,
   ...rest
 }: SelectBaseProps<T> & Rest) {
   const theme = useTheme2();
   const styles = getSelectStyles(theme);
 
-  const reactSelectRef = useRef<{ controlRef: HTMLElement }>(null);
+  const reactSelectRef = useRef<HTMLElement & { controlRef: HTMLElement }>(null);
   const [closeToBottom, setCloseToBottom] = useState<boolean>(false);
   const selectStyles = useCustomSelectStyles(theme, width);
   const [hasInputValue, setHasInputValue] = useState<boolean>(!!inputValue);
+
+  useImperativeHandle(selectRef, () => reactSelectRef.current!, []);
 
   // Infer the menu position for asynchronously loaded options. menuPlacement="auto" doesn't work when the menu is
   // automatically opened when the component is created (it happens in SegmentSelect by setting menuIsOpen={true}).
@@ -193,9 +196,9 @@ export function SelectBase<T, Rest = {}>({
 
   const creatableProps: ComponentProps<typeof Creatable<SelectableValue<T>>> = {};
   let asyncSelectProps: any = {};
-  let selectedValue;
+  let selectedValue: any;
   if (isMulti && loadOptions) {
-    selectedValue = value as any;
+    selectedValue = value;
   } else {
     // If option is passed as a plain value (value property from SelectableValue property)
     // we are selecting the corresponding value from the options
@@ -253,9 +256,9 @@ export function SelectBase<T, Rest = {}>({
     maxVisibleValues,
     menuIsOpen: isOpen,
     menuPlacement: menuPlacement === 'auto' && closeToBottom ? 'top' : menuPlacement,
-    menuPosition,
+    menuPosition: menuShouldPortal ? 'fixed' : menuPosition,
     menuShouldBlockScroll: true,
-    menuPortalTarget: menuShouldPortal && typeof document !== 'undefined' ? document.body : undefined,
+    menuPortalTarget: menuShouldPortal && getPortalContainer(),
     menuShouldScrollIntoView: false,
     onBlur,
     onChange: onChangeWithEmpty,
@@ -350,25 +353,37 @@ export function SelectBase<T, Rest = {}>({
               <Icon
                 name="times"
                 role="button"
-                aria-label="select-clear-value"
+                aria-label={t('grafana-ui.select.clear-value', 'Clear value')}
                 className={styles.singleValueRemove}
+                tabIndex={0}
                 onMouseDown={(e) => {
                   e.preventDefault();
                   e.stopPropagation();
                   clearValue();
                 }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    clearValue();
+                  }
+                }}
               />
             );
           },
           LoadingIndicator() {
-            return <Spinner inline />;
+            // Handled with DropdownIndicator, to avoid resize flickering with auto width
+            return null;
           },
           LoadingMessage() {
             return <div className={styles.loadingMessage}>{loadingMessage}</div>;
           },
           NoOptionsMessage() {
             return (
-              <div className={styles.loadingMessage} aria-label="No options provided">
+              <div
+                className={styles.loadingMessage}
+                aria-label={t('grafana-ui.select.empty-options', 'No options provided')}
+              >
                 {noOptionsMessage}
               </div>
             );
@@ -392,6 +407,7 @@ export function SelectBase<T, Rest = {}>({
         }
         styles={selectStyles}
         className={className}
+        autoWidth={width === 'auto'}
         {...commonSelectProps}
         {...creatableProps}
         {...asyncSelectProps}
@@ -407,7 +423,7 @@ function defaultFormatCreateLabel(input: string) {
       <div>{input}</div>
       <div style={{ flexGrow: 1 }} />
       <div className="muted small" style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-        Hit enter to add
+        <Trans i18nKey="grafana-ui.select.default-create-label">Hit enter to add</Trans>
       </div>
     </div>
   );
@@ -432,7 +448,7 @@ function CustomIndicatorsContainer(props: CustomIndicatorsContainerProps) {
         -1,
         0,
         <span key="excess-values" id="excess-values">
-          (+{selectedValuesCount - maxVisibleValues})
+          {`(+${selectedValuesCount - maxVisibleValues})`}
         </span>
       );
 

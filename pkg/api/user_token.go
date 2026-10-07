@@ -8,13 +8,14 @@ import (
 
 	"github.com/ua-parser/uap-go/uaparser"
 
-	"github.com/grafana/authlib/claims"
+	claims "github.com/grafana/authlib/types"
 	"github.com/grafana/grafana/pkg/api/dtos"
 	"github.com/grafana/grafana/pkg/api/response"
 	"github.com/grafana/grafana/pkg/infra/network"
 	"github.com/grafana/grafana/pkg/services/auth"
 	"github.com/grafana/grafana/pkg/services/authn"
 	contextmodel "github.com/grafana/grafana/pkg/services/contexthandler/model"
+	"github.com/grafana/grafana/pkg/services/login"
 	"github.com/grafana/grafana/pkg/services/user"
 	"github.com/grafana/grafana/pkg/util"
 	"github.com/grafana/grafana/pkg/web"
@@ -32,11 +33,11 @@ import (
 // 403: forbiddenError
 // 500: internalServerError
 func (hs *HTTPServer) GetUserAuthTokens(c *contextmodel.ReqContext) response.Response {
-	if !c.SignedInUser.IsIdentityType(claims.TypeUser) {
+	if !c.IsIdentityType(claims.TypeUser) {
 		return response.Error(http.StatusForbidden, "entity not allowed to get tokens", nil)
 	}
 
-	userID, err := c.SignedInUser.GetInternalID()
+	userID, err := c.GetInternalID()
 	if err != nil {
 		return response.Error(http.StatusInternalServerError, "failed to parse user id", err)
 	}
@@ -62,11 +63,11 @@ func (hs *HTTPServer) RevokeUserAuthToken(c *contextmodel.ReqContext) response.R
 		return response.Error(http.StatusBadRequest, "bad request data", err)
 	}
 
-	if !c.SignedInUser.IsIdentityType(claims.TypeUser) {
+	if !c.IsIdentityType(claims.TypeUser) {
 		return response.Error(http.StatusForbidden, "entity not allowed to revoke tokens", nil)
 	}
 
-	userID, err := c.SignedInUser.GetInternalID()
+	userID, err := c.GetInternalID()
 	if err != nil {
 		return response.Error(http.StatusInternalServerError, "failed to parse user id", err)
 	}
@@ -89,10 +90,10 @@ func (hs *HTTPServer) RotateUserAuthTokenRedirect(c *contextmodel.ReqContext) re
 	}
 
 	redirectTo := hs.Cfg.AppSubURL + c.Query("redirectTo")
-	if err := hs.ValidateRedirectTo(redirectTo); err != nil {
-		return response.Redirect(hs.Cfg.AppSubURL + "/")
+	if sanitized, err := hs.ValidateRedirectTo(redirectTo); err == nil {
+		return response.Redirect(sanitized)
 	}
-	return response.Redirect(redirectTo)
+	return response.Redirect(hs.Cfg.AppSubURL + "/")
 }
 
 // swagger:route POST /user/auth-tokens/rotate
@@ -224,6 +225,12 @@ func (hs *HTTPServer) getUserAuthTokensInternal(c *contextmodel.ReqContext, user
 			seenAt = createdAt
 		}
 
+		// Retrieve AuthModule from external session
+		authModule := ""
+		if externalSession, err := hs.AuthTokenService.GetExternalSession(c.Req.Context(), token.ExternalSessionId); err == nil {
+			authModule = login.GetAuthProviderLabel(externalSession.AuthModule)
+		}
+
 		result = append(result, &dtos.UserToken{
 			Id:                     token.Id,
 			IsActive:               isActive,
@@ -233,6 +240,7 @@ func (hs *HTTPServer) getUserAuthTokensInternal(c *contextmodel.ReqContext, user
 			OperatingSystemVersion: osVersion,
 			Browser:                client.UserAgent.Family,
 			BrowserVersion:         browserVersion,
+			AuthModule:             authModule,
 			CreatedAt:              createdAt,
 			SeenAt:                 seenAt,
 		})
