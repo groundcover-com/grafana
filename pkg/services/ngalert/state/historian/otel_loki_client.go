@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/grafana/alerting/notify/historian/lokiclient"
 	"github.com/grafana/grafana/pkg/services/ngalert/metrics"
 	"github.com/unknwon/log"
 	"github.com/valyala/bytebufferpool"
@@ -80,8 +81,8 @@ func (p *otelLokiClient) Ping(context.Context) error {
 	return nil
 }
 
-func (p *otelLokiClient) RangeQuery(ctx context.Context, logQL string, start, end, limit int64) (QueryRes, error) {
-	return QueryRes{}, fmt.Errorf("unsupported operation")
+func (p *otelLokiClient) RangeQuery(ctx context.Context, logQL string, start, end, limit int64) (lokiclient.QueryRes, error) {
+	return lokiclient.QueryRes{}, fmt.Errorf("unsupported operation")
 }
 
 func (p *otelLokiClient) initClient() (err error) {
@@ -122,7 +123,7 @@ func (p *otelLokiClient) MaxQuerySize() int {
 	return p.cfg.MaxQuerySize
 }
 
-func (p *otelLokiClient) Push(ctx context.Context, s []Stream) (err error) {
+func (p *otelLokiClient) Push(ctx context.Context, s []lokiclient.Stream) (err error) {
 	const (
 		exportGRPCMethodName = "otelExportGRPC"
 		exportHTTPMethodName = "otelExportHTTP"
@@ -232,7 +233,7 @@ func (p *otelLokiClient) pushGrpc(ctx context.Context, req *plogotlp.ExportReque
 	return successCode, nil
 }
 
-func (p *otelLokiClient) pushRequestToLogs(sreams []Stream, observedTimestamp time.Time) (plog.Logs, int, error) {
+func (p *otelLokiClient) pushRequestToLogs(sreams []lokiclient.Stream, observedTimestamp time.Time) (plog.Logs, int, error) {
 	logs := plog.NewLogs()
 	if len(sreams) == 0 {
 		return logs, 0, nil
@@ -265,7 +266,7 @@ func (p *otelLokiClient) pushRequestToLogs(sreams []Stream, observedTimestamp ti
 	return logs, totalSize, lastErr
 }
 
-func convertEntryToLogRecord(entry Sample, streamAttributes map[string]string, lr *plog.LogRecord, defaultTimestamp time.Time) error {
+func convertEntryToLogRecord(entry lokiclient.Sample, streamAttributes map[string]string, lr *plog.LogRecord, defaultTimestamp time.Time) error {
 	const timestampAttribute = "timestamp"
 
 	observedTimestamp := pcommon.NewTimestampFromTime(defaultTimestamp)

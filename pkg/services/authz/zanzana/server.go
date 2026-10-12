@@ -1,20 +1,13 @@
 package zanzana
 
 import (
-	"github.com/openfga/openfga/pkg/server"
-	"github.com/openfga/openfga/pkg/storage"
+	authzv1 "github.com/grafana/authlib/authz/proto/v1"
 
-	"github.com/grafana/grafana/pkg/infra/log"
-	"github.com/grafana/grafana/pkg/services/grpcserver"
-	"github.com/grafana/grafana/pkg/setting"
-
-	zserver "github.com/grafana/grafana/pkg/services/authz/zanzana/server"
+	authzextv1 "github.com/grafana/grafana/pkg/services/authz/proto/v1"
 )
 
-func NewServer(store storage.OpenFGADatastore, logger log.Logger) (*server.Server, error) {
-	return zserver.New(store, logger)
-}
-
-func StartOpenFGAHttpSever(cfg *setting.Cfg, srv grpcserver.Provider, logger log.Logger) error {
-	return zserver.StartOpenFGAHttpSever(cfg, srv, logger)
+type Server interface {
+	authzv1.AuthzServiceServer
+	authzextv1.AuthzExtentionServiceServer
+	Close()
 }

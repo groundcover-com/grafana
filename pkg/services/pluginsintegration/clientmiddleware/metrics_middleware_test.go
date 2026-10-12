@@ -16,8 +16,7 @@ import (
 	"github.com/grafana/grafana/pkg/plugins"
 	"github.com/grafana/grafana/pkg/plugins/backendplugin"
 	"github.com/grafana/grafana/pkg/plugins/instrumentationutils"
-	"github.com/grafana/grafana/pkg/plugins/manager/fakes"
-	"github.com/grafana/grafana/pkg/plugins/pluginrequestmeta"
+	"github.com/grafana/grafana/pkg/plugins/manager/pluginfakes"
 )
 
 const (
@@ -30,7 +29,7 @@ const (
 )
 
 func TestInstrumentationMiddleware(t *testing.T) {
-	pCtx := backend.PluginContext{PluginID: pluginID}
+	pCtx := backend.PluginContext{PluginID: pluginID, PluginVersion: "1.0.0"}
 	t.Run("should instrument requests", func(t *testing.T) {
 		for _, tc := range []struct {
 			expEndpoint                 backend.Endpoint
@@ -71,7 +70,7 @@ func TestInstrumentationMiddleware(t *testing.T) {
 		} {
 			t.Run(string(tc.expEndpoint), func(t *testing.T) {
 				promRegistry := prometheus.NewRegistry()
-				pluginsRegistry := fakes.NewFakePluginRegistry()
+				pluginsRegistry := pluginfakes.NewFakePluginRegistry()
 				require.NoError(t, pluginsRegistry.Add(context.Background(), &plugins.Plugin{
 					JSONData: plugins.JSONData{ID: pluginID, Backend: true},
 				}))
@@ -90,7 +89,7 @@ func TestInstrumentationMiddleware(t *testing.T) {
 				require.Equal(t, 1, testutil.CollectAndCount(promRegistry, metricRequestDurationMs))
 				require.Equal(t, 1, testutil.CollectAndCount(promRegistry, metricRequestDurationS))
 
-				counter := mw.pluginMetrics.pluginRequestCounter.WithLabelValues(pluginID, string(tc.expEndpoint), instrumentationutils.RequestStatusOK.String(), string(backendplugin.TargetUnknown), string(pluginrequestmeta.DefaultStatusSource))
+				counter := mw.pluginRequestCounter.WithLabelValues(pluginID, string(tc.expEndpoint), instrumentationutils.RequestStatusOK.String(), string(backendplugin.TargetUnknown), pCtx.PluginVersion, string(backend.DefaultErrorSource))
 				require.Equal(t, 1.0, testutil.ToFloat64(counter))
 				for _, m := range []string{metricRequestDurationMs, metricRequestDurationS} {
 					require.NoError(t, checkHistogram(promRegistry, m, map[string]string{
@@ -116,10 +115,11 @@ func TestInstrumentationMiddleware(t *testing.T) {
 func TestInstrumentationMiddlewareStatusSource(t *testing.T) {
 	const labelStatusSource = "status_source"
 	queryDataErrorCounterLabels := prometheus.Labels{
-		"plugin_id": pluginID,
-		"endpoint":  string(backend.EndpointQueryData),
-		"status":    instrumentationutils.RequestStatusError.String(),
-		"target":    string(backendplugin.TargetUnknown),
+		"plugin_id":      pluginID,
+		"endpoint":       string(backend.EndpointQueryData),
+		"status":         instrumentationutils.RequestStatusError.String(),
+		"target":         string(backendplugin.TargetUnknown),
+		"plugin_version": "1.0.0",
 	}
 	downstreamErrorResponse := backend.DataResponse{
 		Frames:      nil,
@@ -146,32 +146,31 @@ func TestInstrumentationMiddlewareStatusSource(t *testing.T) {
 		ErrorSource: "",
 	}
 
-	pCtx := backend.PluginContext{PluginID: pluginID}
+	pCtx := backend.PluginContext{PluginID: pluginID, PluginVersion: "1.0.0"}
 
 	promRegistry := prometheus.NewRegistry()
-	pluginsRegistry := fakes.NewFakePluginRegistry()
+	pluginsRegistry := pluginfakes.NewFakePluginRegistry()
 	require.NoError(t, pluginsRegistry.Add(context.Background(), &plugins.Plugin{
 		JSONData: plugins.JSONData{ID: pluginID, Backend: true},
 	}))
 	metricsMw := newMetricsMiddleware(promRegistry, pluginsRegistry)
 	cdt := handlertest.NewHandlerMiddlewareTest(t, handlertest.WithMiddlewares(
-		NewPluginRequestMetaMiddleware(),
 		backend.HandlerMiddlewareFunc(func(next backend.Handler) backend.Handler {
 			metricsMw.BaseHandler = backend.NewBaseHandler(next)
 			return metricsMw
 		}),
-		NewStatusSourceMiddleware(),
+		backend.NewErrorSourceMiddleware(),
 	))
 
 	t.Run("Metrics", func(t *testing.T) {
-		metricsMw.pluginMetrics.pluginRequestCounter.Reset()
+		metricsMw.pluginRequestCounter.Reset()
 
 		cdt.TestHandler.QueryDataFunc = func(ctx context.Context, req *backend.QueryDataRequest) (*backend.QueryDataResponse, error) {
 			return &backend.QueryDataResponse{Responses: map[string]backend.DataResponse{"A": downstreamErrorResponse}}, nil
 		}
 		_, err := cdt.MiddlewareHandler.QueryData(context.Background(), &backend.QueryDataRequest{PluginContext: pCtx})
 		require.NoError(t, err)
-		counter, err := metricsMw.pluginMetrics.pluginRequestCounter.GetMetricWith(newLabels(
+		counter, err := metricsMw.pluginRequestCounter.GetMetricWith(newLabels(
 			queryDataErrorCounterLabels,
 			prometheus.Labels{
 				labelStatusSource: string(backend.ErrorSourceDownstream),
@@ -185,12 +184,12 @@ func TestInstrumentationMiddlewareStatusSource(t *testing.T) {
 		for _, tc := range []struct {
 			name            string
 			responses       map[string]backend.DataResponse
-			expStatusSource pluginrequestmeta.StatusSource
+			expStatusSource backend.ErrorSource
 		}{
 			{
 				"Default status source for ok responses should be plugin",
 				map[string]backend.DataResponse{"A": okResponse},
-				pluginrequestmeta.StatusSourcePlugin,
+				backend.ErrorSourcePlugin,
 			},
 			{
 				"Plugin errors should have higher priority than downstream errors",
@@ -198,12 +197,12 @@ func TestInstrumentationMiddlewareStatusSource(t *testing.T) {
 					"A": pluginErrorResponse,
 					"B": downstreamErrorResponse,
 				},
-				pluginrequestmeta.StatusSourcePlugin,
+				backend.ErrorSourcePlugin,
 			},
 			{
 				"Errors without ErrorSource should be reported as plugin status source",
 				map[string]backend.DataResponse{"A": legacyErrorResponse},
-				pluginrequestmeta.StatusSourcePlugin,
+				backend.ErrorSourcePlugin,
 			},
 			{
 				"Downstream errors should have higher priority than ok responses",
@@ -211,7 +210,7 @@ func TestInstrumentationMiddlewareStatusSource(t *testing.T) {
 					"A": okResponse,
 					"B": downstreamErrorResponse,
 				},
-				pluginrequestmeta.StatusSourceDownstream,
+				backend.ErrorSourceDownstream,
 			},
 			{
 				"Plugin errors should have higher priority than ok responses",
@@ -219,7 +218,7 @@ func TestInstrumentationMiddlewareStatusSource(t *testing.T) {
 					"A": okResponse,
 					"B": pluginErrorResponse,
 				},
-				pluginrequestmeta.StatusSourcePlugin,
+				backend.ErrorSourcePlugin,
 			},
 			{
 				"Legacy errors should have higher priority than ok responses",
@@ -227,7 +226,7 @@ func TestInstrumentationMiddlewareStatusSource(t *testing.T) {
 					"A": okResponse,
 					"B": legacyErrorResponse,
 				},
-				pluginrequestmeta.StatusSourcePlugin,
+				backend.ErrorSourcePlugin,
 			},
 		} {
 			t.Run(tc.name, func(t *testing.T) {
@@ -242,7 +241,7 @@ func TestInstrumentationMiddlewareStatusSource(t *testing.T) {
 				}
 				_, err := cdt.MiddlewareHandler.QueryData(context.Background(), &backend.QueryDataRequest{PluginContext: pCtx})
 				require.NoError(t, err)
-				ctxStatusSource := pluginrequestmeta.StatusSourceFromContext(cdt.QueryDataCtx)
+				ctxStatusSource := backend.ErrorSourceFromContext(cdt.QueryDataCtx)
 				require.Equal(t, tc.expStatusSource, ctxStatusSource)
 			})
 		}

@@ -8,11 +8,11 @@ import (
 
 	profilestore "buf.build/gen/go/parca-dev/parca/protocolbuffers/go/parca/profilestore/v1alpha1"
 	v1alpha1 "buf.build/gen/go/parca-dev/parca/protocolbuffers/go/parca/query/v1alpha1"
-	"github.com/apache/arrow/go/v15/arrow"
-	"github.com/apache/arrow/go/v15/arrow/array"
-	"github.com/apache/arrow/go/v15/arrow/ipc"
-	"github.com/apache/arrow/go/v15/arrow/memory"
-	"github.com/bufbuild/connect-go"
+	"connectrpc.com/connect"
+	"github.com/apache/arrow-go/v18/arrow"
+	"github.com/apache/arrow-go/v18/arrow/array"
+	"github.com/apache/arrow-go/v18/arrow/ipc"
+	"github.com/apache/arrow-go/v18/arrow/memory"
 	"github.com/grafana/grafana-plugin-sdk-go/backend"
 	"github.com/grafana/grafana-plugin-sdk-go/data"
 	"github.com/stretchr/testify/require"
@@ -278,7 +278,7 @@ func flamegraphResponse() *connect.Response[v1alpha1.QueryResponse] {
 		builderFlat.Append(columns.flat[i])
 	}
 
-	record := array.NewRecord(
+	record := array.NewRecordBatch(
 		arrow.NewSchema(fields, nil),
 		[]arrow.Array{
 			builderLocationAddress.NewArray(),

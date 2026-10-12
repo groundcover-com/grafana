@@ -7,13 +7,15 @@ exports[`formValuesToRulerGrafanaRuleDTO should correctly convert rule form valu
   "grafana_alert": {
     "condition": "A",
     "data": [],
-    "exec_err_state": "Error",
+    "exec_err_state": "OK",
     "is_paused": false,
     "metadata": undefined,
-    "no_data_state": "NoData",
+    "missing_series_evals_to_resolve": 0,
+    "no_data_state": "OK",
     "notification_settings": undefined,
     "title": "",
   },
+  "keep_firing_for": "0s",
   "labels": {},
 }
 `;
@@ -28,6 +30,7 @@ exports[`formValuesToRulerGrafanaRuleDTO should correctly convert rule form valu
     "record": {
       "from": "A",
       "metric": "",
+      "target_datasource_uid": undefined,
     },
     "title": "",
   },
@@ -58,13 +61,15 @@ exports[`formValuesToRulerGrafanaRuleDTO should not save both instant and range 
         },
       },
     ],
-    "exec_err_state": "Error",
+    "exec_err_state": "OK",
     "is_paused": false,
     "metadata": undefined,
-    "no_data_state": "NoData",
+    "missing_series_evals_to_resolve": 0,
+    "no_data_state": "OK",
     "notification_settings": undefined,
     "title": "",
   },
+  "keep_firing_for": "0s",
   "labels": {},
 }
 `;

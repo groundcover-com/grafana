@@ -19,8 +19,6 @@ import (
 	"github.com/grafana/grafana-plugin-sdk-go/backend/httpclient"
 	"github.com/grafana/grafana-plugin-sdk-go/backend/instancemgmt"
 	"github.com/grafana/grafana-plugin-sdk-go/backend/log"
-	exp "github.com/grafana/grafana-plugin-sdk-go/experimental/errorsource"
-	exphttpclient "github.com/grafana/grafana-plugin-sdk-go/experimental/errorsource/httpclient"
 
 	es "github.com/grafana/grafana/pkg/tsdb/elasticsearch/client"
 )
@@ -90,10 +88,15 @@ func newInstanceSettings(httpClientProvider *httpclient.Provider) datasource.Ins
 			httpCliOpts.SigV4.Service = "es"
 		}
 
-		// set the default middlewars from the httpClientProvider
-		httpCliOpts.Middlewares = httpClientProvider.Opts.Middlewares
-		// enable experimental http client to support errors with source
-		httpCli, err := exphttpclient.New(httpCliOpts)
+		apiKeyAuth, ok := jsonData["apiKeyAuth"].(bool)
+		if ok && apiKeyAuth {
+			apiKey := settings.DecryptedSecureJSONData["apiKey"]
+			if apiKey != "" {
+				httpCliOpts.Header.Add("Authorization", "ApiKey "+apiKey)
+			}
+		}
+
+		httpCli, err := httpClientProvider.New(httpCliOpts)
 		if err != nil {
 			return nil, err
 		}
@@ -102,11 +105,11 @@ func newInstanceSettings(httpClientProvider *httpclient.Provider) datasource.Ins
 
 		timeField, ok := jsonData["timeField"].(string)
 		if !ok {
-			return nil, exp.DownstreamError(errors.New("timeField cannot be cast to string"), false)
+			return nil, backend.DownstreamError(errors.New("timeField cannot be cast to string"))
 		}
 
 		if timeField == "" {
-			return nil, exp.DownstreamError(errors.New("elasticsearch time field name is required"), false)
+			return nil, backend.DownstreamError(errors.New("elasticsearch time field name is required"))
 		}
 
 		logLevelField, ok := jsonData["logLevelField"].(string)
@@ -156,6 +159,15 @@ func newInstanceSettings(httpClientProvider *httpclient.Provider) datasource.Ins
 			includeFrozen = false
 		}
 
+		clusterInfo, err := es.GetClusterInfo(httpCli, settings.URL)
+		if err != nil {
+			// Log warning but continue with default (non-serverless) behavior
+			// This handles cases where users don't have permission to access the root endpoint (403)
+			// or other connectivity issues that shouldn't prevent basic datasource functionality
+			backend.Logger.Warn("Failed to get Elasticsearch cluster info, assuming non-serverless cluster", "error", err, "url", settings.URL)
+			clusterInfo = es.ClusterInfo{}
+		}
+
 		configuredFields := es.ConfiguredFields{
 			TimeField:       timeField,
 			LogLevelField:   logLevelField,
@@ -171,6 +183,7 @@ func newInstanceSettings(httpClientProvider *httpclient.Provider) datasource.Ins
 			ConfiguredFields:           configuredFields,
 			Interval:                   interval,
 			IncludeFrozen:              includeFrozen,
+			ClusterInfo:                clusterInfo,
 		}
 		return model, nil
 	}
@@ -187,14 +200,21 @@ func (s *Service) getDSInfo(ctx context.Context, pluginCtx backend.PluginContext
 	return &instance, nil
 }
 
+func isFieldCaps(url string) bool {
+	return strings.HasSuffix(url, "/_field_caps") || url == "_field_caps"
+}
+
 func (s *Service) CallResource(ctx context.Context, req *backend.CallResourceRequest, sender backend.CallResourceResponseSender) error {
 	logger := s.logger.FromContext(ctx)
 	// allowed paths for resource calls:
 	// - empty string for fetching db version
 	// - /_mapping for fetching index mapping, e.g. requests going to `index/_mapping`
+	// - /_field_caps for fetching field capabilities, e.g. requests going to `index/_field_caps`
 	// - _msearch for executing getTerms queries
 	// - _mapping for fetching "root" index mappings
-	if req.Path != "" && !strings.HasSuffix(req.Path, "/_mapping") && req.Path != "_msearch" && req.Path != "_mapping" {
+	// - _field_caps for fetching "root" field capabilities
+	if req.Path != "" && !isFieldCaps(req.Path) && req.Path != "_msearch" &&
+		!strings.HasSuffix(req.Path, "/_mapping") && req.Path != "_mapping" {
 		logger.Error("Invalid resource path", "path", req.Path)
 		return fmt.Errorf("invalid resource URL: %s", req.Path)
 	}
@@ -225,9 +245,9 @@ func (s *Service) CallResource(ctx context.Context, req *backend.CallResourceReq
 			status = "cancelled"
 		}
 		lp := []any{"error", err, "status", status, "duration", time.Since(start), "stage", es.StageDatabaseRequest, "resourcePath", req.Path}
-		sourceErr := exp.Error{}
+		sourceErr := backend.ErrorWithSource{}
 		if errors.As(err, &sourceErr) {
-			lp = append(lp, "statusSource", sourceErr.Source())
+			lp = append(lp, "statusSource", sourceErr.ErrorSource())
 		}
 		if response != nil {
 			lp = append(lp, "statusCode", response.StatusCode)
@@ -271,6 +291,9 @@ func createElasticsearchURL(req *backend.CallResourceRequest, ds *es.DatasourceI
 	}
 
 	esUrl.Path = path.Join(esUrl.Path, req.Path)
+	if isFieldCaps(req.Path) {
+		esUrl.RawQuery = "fields=*"
+	}
 	esUrlString := esUrl.String()
 	// If the request path is empty and the URL does not end with a slash, add a slash to the URL.
 	// This ensures that for version checks executed to the root URL, the URL ends with a slash.
