@@ -45,12 +45,13 @@ func ProvideExtSvcAccountsService(acSvc ac.Service, cfg *setting.Cfg, bus bus.Bu
 		saSvc:        saSvc,
 		skvStore:     kvstore.NewSQLSecretsKVStore(db, secretsSvc, logger), // Using SQL store to avoid a cyclic dependency
 		tracer:       tracer,
-		enabled:      cfg.ManagedServiceAccountsEnabled && features.IsEnabledGlobally(featuremgmt.FlagExternalServiceAccounts),
+		//nolint:staticcheck // not yet migrated to OpenFeature
+		enabled: cfg.ManagedServiceAccountsEnabled && features.IsEnabledGlobally(featuremgmt.FlagExternalServiceAccounts),
 	}
 
 	if esa.enabled {
 		// Register the metrics
-		esa.metrics = newMetrics(reg, esa.defaultOrgID, saSvc, logger)
+		esa.metrics = newMetrics(reg)
 
 		// Register a listener to enable/disable service accounts
 		bus.AddEventListener(esa.handlePluginStateChanged)
@@ -94,7 +95,7 @@ func (esa *ExtSvcAccountsService) RetrieveExtSvcAccount(ctx context.Context, org
 	ctx, span := esa.tracer.Start(ctx, "ExtSvcAccountsService.RetrieveExtSvcAccount")
 	defer span.End()
 
-	svcAcc, err := esa.saSvc.RetrieveServiceAccount(ctx, orgID, saID)
+	svcAcc, err := esa.saSvc.RetrieveServiceAccount(ctx, &sa.GetServiceAccountQuery{OrgID: orgID, ID: saID})
 	if err != nil {
 		return nil, err
 	}
@@ -350,7 +351,7 @@ func (esa *ExtSvcAccountsService) getExtSvcAccountToken(ctx context.Context, org
 	// Get credentials from store
 	credentials, err := esa.GetExtSvcCredentials(ctx, orgID, extSvcSlug)
 	if err != nil && !errors.Is(err, ErrCredentialsNotFound) {
-		if !errors.Is(err, &satokengen.ErrInvalidApiKey{}) {
+		if !errors.Is(err, satokengen.ErrInvalidApiKey) {
 			return "", err
 		}
 		ctxLogger.Warn("Invalid token found in store, recovering...", "service", extSvcSlug, "orgID", orgID)

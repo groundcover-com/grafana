@@ -1,15 +1,17 @@
 package definitions
 
+import "github.com/grafana/alerting/definition"
+
 // swagger:route GET /v1/provisioning/templates provisioning stable RouteGetTemplates
 //
-// Get all notification templates.
+// Get all notification template groups.
 //
 //     Responses:
 //       200: NotificationTemplates
 
 // swagger:route GET /v1/provisioning/templates/{name} provisioning stable RouteGetTemplate
 //
-// Get a notification template.
+// Get a notification template group.
 //
 //     Responses:
 //       200: NotificationTemplate
@@ -17,7 +19,7 @@ package definitions
 
 // swagger:route PUT /v1/provisioning/templates/{name} provisioning stable RoutePutTemplate
 //
-// Updates an existing notification template.
+// Updates an existing notification template group.
 //
 //     Consumes:
 //     - application/json
@@ -29,7 +31,7 @@ package definitions
 
 // swagger:route DELETE /v1/provisioning/templates/{name} provisioning stable RouteDeleteTemplate
 //
-// Delete a template.
+// Delete a notification template group.
 //
 //     Responses:
 //       204: description: The template was deleted successfully.
@@ -37,14 +39,14 @@ package definitions
 
 // swagger:parameters RouteGetTemplate RoutePutTemplate RouteDeleteTemplate
 type RouteGetTemplateParam struct {
-	// Template Name
+	// Template group name
 	// in:path
 	Name string `json:"name"`
 }
 
 // swagger:parameters stable RouteDeleteTemplate
 type RouteDeleteTemplateParam struct {
-	// Template name
+	// Template group name
 	// in:path
 	Name string `json:"name"`
 
@@ -55,11 +57,12 @@ type RouteDeleteTemplateParam struct {
 
 // swagger:model
 type NotificationTemplate struct {
-	UID             string     `json:"-" yaml:"-"`
-	Name            string     `json:"name"`
-	Template        string     `json:"template"`
-	Provenance      Provenance `json:"provenance,omitempty"`
-	ResourceVersion string     `json:"version,omitempty"`
+	UID             string                  `json:"-" yaml:"-"`
+	Name            string                  `json:"name"`
+	Template        string                  `json:"template"`
+	Provenance      Provenance              `json:"provenance,omitempty"`
+	ResourceVersion string                  `json:"version,omitempty"`
+	Kind            definition.TemplateKind `json:"-" yaml:"-"`
 }
 
 // swagger:model

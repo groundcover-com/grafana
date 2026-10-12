@@ -978,7 +978,7 @@ func TestCloudMonitoring(t *testing.T) {
 func getCloudMonitoringListFromInterface(t *testing.T, qes []cloudMonitoringQueryExecutor) []*cloudMonitoringTimeSeriesList {
 	t.Helper()
 
-	queries := make([]*cloudMonitoringTimeSeriesList, 0)
+	queries := make([]*cloudMonitoringTimeSeriesList, 0, len(qes))
 	for _, qi := range qes {
 		q, ok := qi.(*cloudMonitoringTimeSeriesList)
 		require.Truef(t, ok, "Received wrong type %T", qi)
@@ -990,7 +990,7 @@ func getCloudMonitoringListFromInterface(t *testing.T, qes []cloudMonitoringQuer
 func getCloudMonitoringSLOFromInterface(t *testing.T, qes []cloudMonitoringQueryExecutor) []*cloudMonitoringSLO {
 	t.Helper()
 
-	queries := make([]*cloudMonitoringSLO, 0)
+	queries := make([]*cloudMonitoringSLO, 0, len(qes))
 	for _, qi := range qes {
 		q, ok := qi.(*cloudMonitoringSLO)
 		require.Truef(t, ok, "Received wrong type %T", qi)
@@ -1002,7 +1002,7 @@ func getCloudMonitoringSLOFromInterface(t *testing.T, qes []cloudMonitoringQuery
 func getCloudMonitoringQueryFromInterface(t *testing.T, qes []cloudMonitoringQueryExecutor) []*cloudMonitoringTimeSeriesQuery {
 	t.Helper()
 
-	queries := make([]*cloudMonitoringTimeSeriesQuery, 0)
+	queries := make([]*cloudMonitoringTimeSeriesQuery, 0, len(qes))
 	for _, qi := range qes {
 		q, ok := qi.(*cloudMonitoringTimeSeriesQuery)
 		require.Truef(t, ok, "Received wrong type %T", qi)
@@ -1104,7 +1104,7 @@ func baseTimeSeriesList() *backend.QueryDataRequest {
 					From: fromStart,
 					To:   fromStart.Add(34 * time.Minute),
 				},
-				QueryType: string(dataquery.QueryTypeTimeSeriesList),
+				QueryType: string(dataquery.QueryTypeTIMESERIESLIST),
 				JSON: json.RawMessage(`{
 					"timeSeriesList": {
 						"filters": ["metric.type=\"a/metric/type\""],
@@ -1128,7 +1128,7 @@ func baseTimeSeriesQuery() *backend.QueryDataRequest {
 					From: fromStart,
 					To:   fromStart.Add(34 * time.Minute),
 				},
-				QueryType: string(dataquery.QueryTypeTimeSeriesQuery),
+				QueryType: string(dataquery.QueryTypeTIMESERIESQUERY),
 				JSON: json.RawMessage(`{
 					"queryType": "metrics",
 					"timeSeriesQuery": {

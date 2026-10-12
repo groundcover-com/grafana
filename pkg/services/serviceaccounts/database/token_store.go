@@ -45,7 +45,7 @@ func (s *ServiceAccountsStoreImpl) AddServiceAccountToken(ctx context.Context, s
 	var apiKey *apikey.APIKey
 
 	return apiKey, s.sqlStore.WithTransactionalDbSession(ctx, func(sess *db.Session) error {
-		if _, err := s.RetrieveServiceAccount(ctx, cmd.OrgId, serviceAccountId); err != nil {
+		if _, err := s.RetrieveServiceAccount(ctx, &serviceaccounts.GetServiceAccountQuery{OrgID: cmd.OrgId, ID: serviceAccountId}); err != nil {
 			return err
 		}
 
@@ -96,7 +96,7 @@ func (s *ServiceAccountsStoreImpl) RevokeServiceAccountToken(ctx context.Context
 	rawSQL := "UPDATE api_key SET is_revoked = ? WHERE id=? and org_id=? and service_account_id=?"
 
 	return s.sqlStore.WithDbSession(ctx, func(sess *db.Session) error {
-		result, err := sess.Exec(rawSQL, s.sqlStore.GetDialect().BooleanStr(true), tokenId, orgId, serviceAccountId)
+		result, err := sess.Exec(rawSQL, s.sqlStore.GetDialect().BooleanValue(true), tokenId, orgId, serviceAccountId)
 		if err != nil {
 			return err
 		}

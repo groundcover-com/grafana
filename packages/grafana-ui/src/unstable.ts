@@ -10,4 +10,5 @@
  */
 
 export * from './utils/skeleton';
-export * from './components/Combobox/Combobox';
+
+export { TableNG } from './components/Table/TableNG/TableNG';
