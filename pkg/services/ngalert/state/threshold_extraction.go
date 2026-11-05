@@ -46,3 +46,14 @@ func extractConfiguredThreshold(alertRule *models.AlertRule) *float64 {
 	v := config.Conditions[0].Evaluator.Params[0]
 	return &v
 }
+
+// setConfiguredThreshold stores the rule's configured threshold in each transition's values.
+func setConfiguredThreshold(alertRule *models.AlertRule, transitions []StateTransition) {
+	threshold := extractConfiguredThreshold(alertRule)
+	if threshold == nil {
+		return
+	}
+	for _, t := range transitions {
+		t.State.Values[gcConfiguredThresholdKey] = *threshold
+	}
+}

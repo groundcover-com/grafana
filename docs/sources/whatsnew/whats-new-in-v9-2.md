@@ -95,7 +95,7 @@ External alertmanagers should now be configured as data sources using Grafana Co
 _Available in Experimental in Grafana Open Source, Enterprise, and Cloud._
 _To enable public dashboards, you must enable a feature flag or request this feature from support._
 
-[Public dashboards](/docs/grafana/latest/dashboards/dashboard-public/) launched as an experimental feature in Grafana v9.1.
+[Public dashboards](https://grafana.com/docs/grafana/<GRAFANA_VERSION>/dashboards/share-dashboards-panels/shared-dashboards) launched as an experimental feature in Grafana v9.1.
 We've received lots of great feedback on this much-anticipated feature and thank everyone who has helped us improve it.
 The team has been hard at work polishing public dashboards, and we've closed quite a few bugs related to community reports.
 If you're trying out public dashboards, let us know how it is going in the [open discussion in GitHub](https://github.com/grafana/grafana/discussions/49253).
@@ -205,7 +205,7 @@ _Generally available in Grafana Enterprise, Grafana Cloud Pro, and Advanced._
 ### Map a user to all organizations in Grafana
 
 You can now use `*` as the Grafana organization in the mapping to add all users from a given SAML Organization to all existing Grafana organizations.
-For more information, see ["Configure SAML authentication"](/docs/grafana/next/setup-grafana/configure-security/configure-authentication/saml/#configure-organization-mapping) in the documentation.
+For more information, see ["Configure SAML authentication"](/docs/grafana/next/setup-grafana/configure-access/configure-authentication/saml/#configure-organization-mapping) in the documentation.
 
 ### Skip organization role sync
 
@@ -215,13 +215,13 @@ If you use a SAML identity provider to manage your users but prefer to assign ro
 
 Use the `skip_org_role_sync` configuration option when configuring SAML to prevent synchronization with SAML roles and make user roles editable from within Grafana.
 
-For more information, see the [SAML configuration documentation](/docs/grafana/latest/setup-grafana/configure-security/configure-authentication/saml/).
+For more information, see the [SAML configuration documentation](/docs/grafana/<GRAFANA_VERSION>/setup-grafana/configure-access/configure-authentication/saml/).
 
 ## Assign Server Admin permissions from Oauth
 
 You can now map OAuth groups and roles to Server Admin for the GitLab, GitHub, AzureAD, Okta, and Generic OAuth integrations.
 To enable this functionality, set the `allow_assign_grafana_admin` configuration option to `true` in the desired OAuth integration section.
-For more information, see the [authentication configuration documentation](/docs/grafana/latest/setup-grafana/configure-security/configure-authentication/) for each OAuth client.
+For more information, see the [authentication configuration documentation](/docs/grafana/<GRAFANA_VERSION>/setup-grafana/configure-access/configure-authentication/) for each OAuth client.
 
 ## Match parameter support in prometheus labels API
 

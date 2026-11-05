@@ -35,7 +35,7 @@ var (
 
 // LibraryPanelUIDScopeResolver provides a ScopeAttributeResolver that is able to convert a scope prefixed with "library.panels:uid:"
 // into uid based scopes for a library panel and its associated folder hierarchy
-func LibraryPanelUIDScopeResolver(l *LibraryElementService, folderStore folder.Store) (string, ac.ScopeAttributeResolver) {
+func LibraryPanelUIDScopeResolver(l *LibraryElementService, folderSvc folder.Service) (string, ac.ScopeAttributeResolver) {
 	prefix := ScopeLibraryPanelsProvider.GetResourceScopeUID("")
 	return prefix, ac.ScopeAttributeResolverFunc(func(ctx context.Context, orgID int64, scope string) ([]string, error) {
 		if !strings.HasPrefix(scope, prefix) {
@@ -52,18 +52,55 @@ func LibraryPanelUIDScopeResolver(l *LibraryElementService, folderStore folder.S
 			return nil, err
 		}
 
-		libElDTO, err := l.getLibraryElementByUid(ctx, user, model.GetLibraryElementCommand{
-			UID:        uid,
-			FolderName: dashboards.RootFolderName,
-		})
-		if err != nil {
-			return nil, err
+		// In case request cache ID is set, use cached tree
+		var tree *folder.FolderTree
+		if hasCache(ctx) {
+			tree, err = l.treeCache.get(ctx, user)
+			if err != nil {
+				return nil, err
+			}
 		}
 
-		inheritedScopes, err := dashboards.GetInheritedScopes(ctx, orgID, libElDTO.FolderUID, folderStore)
-		if err != nil {
-			return nil, err
+		// The caller (e.g. the list endpoint) may already know this panel's folder.
+		// If so, use it and skip the per-panel database lookup; otherwise fetch it.
+		folderUID, ok := panelFolderFromContext(ctx, uid)
+		if !ok {
+			libElDTO, err := l.getLibraryElementByUid(ctx, user, model.GetLibraryElementCommand{
+				UID:        uid,
+				FolderName: dashboards.RootFolderName,
+			}, tree)
+			if err != nil {
+				return nil, err
+			}
+			folderUID = libElDTO.FolderUID
+		} else if folderUID == "" {
+			// The list endpoint represents the general folder as "", but the scope
+			// machinery (and getLibraryElementByUid) uses the General folder UID.
+			folderUID = ac.GeneralFolderUID
 		}
-		return append(inheritedScopes, dashboards.ScopeFoldersProvider.GetResourceScopeUID(libElDTO.FolderUID), ScopeLibraryPanelsProvider.GetResourceScopeUID(uid)), nil
+
+		var inheritedScopes []string
+		if tree != nil {
+			inheritedScopes = getInheritedScopesFromTree(folderUID, tree)
+		} else {
+			inheritedScopes, err = dashboards.GetInheritedScopes(ctx, orgID, folderUID, folderSvc)
+			if err != nil {
+				return nil, err
+			}
+		}
+		return append(inheritedScopes, dashboards.ScopeFoldersProvider.GetResourceScopeUID(folderUID), ScopeLibraryPanelsProvider.GetResourceScopeUID(uid)), nil
 	})
+}
+
+// getInheritedScopesFromTree returns ancestor scopes using a pre-built folder tree.
+func getInheritedScopesFromTree(folderUID string, tree *folder.FolderTree) []string {
+	if folderUID == ac.GeneralFolderUID || folderUID == "" {
+		return nil
+	}
+
+	result := make([]string, 0)
+	for ancestor := range tree.Ancestors(folderUID) {
+		result = append(result, dashboards.ScopeFoldersProvider.GetResourceScopeUID(ancestor.UID))
+	}
+	return result
 }

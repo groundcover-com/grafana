@@ -16,7 +16,7 @@ export interface TransformerUIProps<T> {
   onChange: (options: T) => void;
 }
 
-export interface TransformerRegistryItem<TOptions> extends RegistryItem {
+export interface TransformerRegistryItem<TOptions = any> extends RegistryItem {
   /**
    * Object describing transformer configuration
    */
@@ -34,6 +34,21 @@ export interface TransformerRegistryItem<TOptions> extends RegistryItem {
    * Set of categories associated with the transformer
    */
   categories?: Set<TransformerCategory>;
+
+  /**
+   * Set of tags associated with the transformer for improved transformation search
+   */
+  tags?: Set<string>;
+
+  /**
+   * Image representing the transformer, for dark themes
+   */
+  imageDark: string;
+
+  /**
+   * Image representing the transformer, for light themes
+   */
+  imageLight: string;
 }
 
 export enum TransformerCategory {
@@ -50,4 +65,4 @@ export enum TransformerCategory {
  * Registry of transformation options that can be driven by
  * stored configuration files.
  */
-export const standardTransformersRegistry = new Registry<TransformerRegistryItem<any>>();
+export const standardTransformersRegistry = new Registry<TransformerRegistryItem>();

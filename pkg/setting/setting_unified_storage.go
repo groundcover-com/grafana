@@ -1,18 +1,134 @@
 package setting
 
 import (
+	"fmt"
+	"os"
 	"strings"
+	"time"
 
 	"github.com/grafana/grafana/pkg/apiserver/rest"
+	"github.com/grafana/grafana/pkg/util/osutil"
 )
 
-// read storage configs from ini file. They look like:
-// [unified_storage.<group>.<resource>]
-// <field> = <value>
-// e.g.
-// [unified_storage.playlists.playlist.grafana.app]
-// dualWriterMode = 2
+// DefaultAutoMigrationThreshold is the default threshold for auto migration switching.
+// If a resource has entries at or below this count, it will be migrated.
+const DefaultAutoMigrationThreshold = 10
+
+// knownUnifiedStorageKeys maps uppercased env-var-style key suffixes to their
+// actual camelCase ini key names used in [unified_storage.*] sections.
+var knownUnifiedStorageKeys = map[string]string{
+	"DUALWRITERMODE":         "dualWriterMode",
+	"ENABLEMIGRATION":        "enableMigration",
+	"AUTOMIGRATIONTHRESHOLD": "autoMigrationThreshold",
+}
+
+const (
+	PlaylistResource  = "playlists.playlist.grafana.app"
+	FolderResource    = "folders.folder.grafana.app"
+	DashboardResource = "dashboards.dashboard.grafana.app"
+	ShortURLResource  = "shorturls.shorturl.grafana.app"
+)
+
+// MigratedUnifiedResources maps resources to a boolean indicating if migration is enabled by default
+var MigratedUnifiedResources = map[string]bool{
+	PlaylistResource:  true, // enabled by default
+	FolderResource:    false,
+	DashboardResource: false,
+	ShortURLResource:  false,
+}
+
+// AutoMigratedUnifiedResources maps resources that support auto-migration
+// TODO: remove this before Grafana 13 GA: https://github.com/grafana/search-and-storage-team/issues/613
+var AutoMigratedUnifiedResources = map[string]bool{
+	FolderResource:    true,
+	DashboardResource: true,
+}
+
+// applyUnifiedStorageEnvOverrides scans environment variables matching
+// GF_UNIFIED_STORAGE_<resource>_<key> and creates the corresponding ini
+// sections and keys. This allows users to configure unified_storage resource
+// sections purely via environment variables without pre-defining them in an
+// ini file.
+//
+// Storage configs in the ini file look like:
+//
+//	[unified_storage.<group>.<resource>]
+//	<field> = <value>
+//
+// For example:
+//
+//	[unified_storage.playlists.playlist.grafana.app]
+//	dualWriterMode = 2
+//
+// Kubernetes resource names (e.g., "dashboards.dashboard.grafana.app") never
+// contain underscores — only dots and lowercase alphanumerics — so every
+// underscore in the resource portion of the env var name maps unambiguously
+// back to a dot. The key names are matched from a known list
+// ([knownUnifiedStorageKeys]) to preserve their original camelCase.
+//
+// Env vars that do not match a known camelCase resource suffix are treated
+// as keys on the bare [unified_storage] section (lowercased snake_case),
+// e.g. GF_UNIFIED_STORAGE_MIGRATION_CACHE_SIZE_KB → migration_cache_size_kb.
+func (cfg *Cfg) applyUnifiedStorageEnvOverrides() {
+	envPrefix := EnvSectionPrefix("unified_storage")
+
+	for _, env := range os.Environ() {
+		if !strings.HasPrefix(env, envPrefix) {
+			continue
+		}
+		eqIdx := strings.IndexByte(env, '=')
+		if eqIdx < 0 {
+			continue
+		}
+		envKey := env[:eqIdx]
+		envValue := env[eqIdx+1:]
+		if envValue == "" {
+			continue
+		}
+
+		remainder := envKey[len(envPrefix):]
+
+		// Try to match a known key suffix. The key is always the last component
+		// after the final underscore that matches a known key name.
+		matched := false
+		for envKeySuffix, iniKeyName := range knownUnifiedStorageKeys {
+			suffix := "_" + envKeySuffix
+			if !strings.HasSuffix(remainder, suffix) {
+				continue
+			}
+			resourceEnv := remainder[:len(remainder)-len(suffix)]
+			if resourceEnv == "" {
+				continue
+			}
+			// Reconstruct the resource name: lowercase with underscores → dots.
+			resourceName := strings.ToLower(strings.ReplaceAll(resourceEnv, "_", "."))
+			sectionName := "unified_storage." + resourceName
+			cfg.Raw.Section(sectionName).Key(iniKeyName).SetValue(envValue)
+			cfg.appliedEnvOverrides = append(cfg.appliedEnvOverrides,
+				fmt.Sprintf("%s=%s", envKey, RedactedValue(envKey, envValue)))
+			matched = true
+			break
+		}
+		if matched {
+			continue
+		}
+
+		// Fallback: bare [unified_storage] section key (lowercased snake_case).
+		keyName := strings.ToLower(remainder)
+		if keyName == "" {
+			continue
+		}
+		cfg.Raw.Section("unified_storage").Key(keyName).SetValue(envValue)
+		cfg.appliedEnvOverrides = append(cfg.appliedEnvOverrides,
+			fmt.Sprintf("%s=%s", envKey, RedactedValue(envKey, envValue)))
+	}
+}
+
 func (cfg *Cfg) setUnifiedStorageConfig() {
+	// Pre-create sections from GF_UNIFIED_STORAGE_* env vars so that
+	// resource sections can be configured purely via environment variables.
+	cfg.applyUnifiedStorageEnvOverrides()
+
 	storageConfig := make(map[string]UnifiedStorageConfig)
 	sections := cfg.Raw.Sections()
 	for _, section := range sections {
@@ -26,13 +142,155 @@ func (cfg *Cfg) setUnifiedStorageConfig() {
 		// parse dualWriter modes from the section
 		dualWriterMode := section.Key("dualWriterMode").MustInt(0)
 
-		// parse dualWriter periodic data syncer config
-		dualWriterPeriodicDataSyncJobEnabled := section.Key("dualWriterPeriodicDataSyncJobEnabled").MustBool(false)
+		// parse EnableMigration from resource section
+		enableMigration := MigratedUnifiedResources[resourceName]
+		if section.HasKey("enableMigration") {
+			enableMigration = section.Key("enableMigration").MustBool(MigratedUnifiedResources[resourceName])
+		}
+
+		// parse autoMigrationThreshold from resource section
+		autoMigrationThreshold := 0
+		autoMigrate := AutoMigratedUnifiedResources[resourceName]
+		if autoMigrate {
+			autoMigrationThreshold = section.Key("autoMigrationThreshold").MustInt(DefaultAutoMigrationThreshold)
+		}
 
 		storageConfig[resourceName] = UnifiedStorageConfig{
-			DualWriterMode:                       rest.DualWriterMode(dualWriterMode),
-			DualWriterPeriodicDataSyncJobEnabled: dualWriterPeriodicDataSyncJobEnabled,
+			DualWriterMode:         rest.DualWriterMode(dualWriterMode),
+			EnableMigration:        enableMigration,
+			AutoMigrationThreshold: autoMigrationThreshold,
 		}
 	}
 	cfg.UnifiedStorage = storageConfig
+
+	// Set indexer config for unified storage
+	section := cfg.Raw.Section("unified_storage")
+	cfg.DisableDataMigrations = section.Key("disable_data_migrations").MustBool(false)
+	cfg.MigrationCacheSizeKB = section.Key("migration_cache_size_kb").MustInt(1000000)
+	cfg.MigrationParquetBuffer = section.Key("migration_parquet_buffer").MustBool(false)
+	if !cfg.DisableDataMigrations && cfg.UnifiedStorageType() == "unified" {
+		// Helper log to find instances running migrations in the future
+		cfg.Logger.Info("Unified migration configs enforced")
+		cfg.enforceMigrationToUnifiedConfigs()
+	} else {
+		// Helper log to find instances disabling migration
+		cfg.Logger.Info("Unified migration configs enforcement disabled", "storage_type", cfg.UnifiedStorageType(), "disable_data_migrations", cfg.DisableDataMigrations)
+	}
+	cfg.EnableSearch = section.Key("enable_search").MustBool(false)
+	cfg.EnableSearchClient = section.Key("enable_search_client").MustBool(false)
+	cfg.MaxPageSizeBytes = section.Key("max_page_size_bytes").MustInt(0)
+	cfg.IndexPath = section.Key("index_path").String()
+	cfg.IndexWorkers = section.Key("index_workers").MustInt(10)
+	cfg.IndexRebuildWorkers = section.Key("index_rebuild_workers").MustInt(5)
+	cfg.EnableSharding = section.Key("enable_sharding").MustBool(false)
+	cfg.QOSEnabled = section.Key("qos_enabled").MustBool(false)
+	cfg.QOSNumberWorker = section.Key("qos_num_worker").MustInt(16)
+	cfg.QOSMaxSizePerTenant = section.Key("qos_max_size_per_tenant").MustInt(1000)
+	cfg.MemberlistBindAddr = section.Key("memberlist_bind_addr").String()
+	cfg.MemberlistAdvertiseAddr = section.Key("memberlist_advertise_addr").String()
+	cfg.MemberlistAdvertisePort = section.Key("memberlist_advertise_port").MustInt(7946)
+	cfg.MemberlistJoinMember = section.Key("memberlist_join_member").String()
+	cfg.MemberlistClusterLabel = section.Key("memberlist_cluster_label").String()
+	cfg.MemberlistClusterLabelVerificationDisabled = section.Key("memberlist_cluster_label_verification_disabled").MustBool(false)
+	cfg.SearchRingReplicationFactor = section.Key("search_ring_replication_factor").MustInt(1)
+	cfg.InstanceID = section.Key("instance_id").String()
+	cfg.IndexFileThreshold = section.Key("index_file_threshold").MustInt(10)
+	cfg.IndexMinCount = section.Key("index_min_count").MustInt(1)
+	// default to 24 hours because usage insights summarizes the data every 24 hours
+	cfg.IndexRebuildInterval = section.Key("index_rebuild_interval").MustDuration(24 * time.Hour)
+	cfg.IndexCacheTTL = section.Key("index_cache_ttl").MustDuration(10 * time.Minute)
+	cfg.IndexMinUpdateInterval = section.Key("index_min_update_interval").MustDuration(0)
+	cfg.SprinklesApiServer = section.Key("sprinkles_api_server").String()
+	cfg.SprinklesApiServerPageLimit = section.Key("sprinkles_api_server_page_limit").MustInt(10000)
+	cfg.CACertPath = section.Key("ca_cert_path").String()
+	cfg.HttpsSkipVerify = section.Key("https_skip_verify").MustBool(false)
+	cfg.ResourceServerJoinRingTimeout = section.Key("resource_server_join_ring_timeout").MustDuration(10 * time.Second)
+
+	// quotas/limits config
+	cfg.OverridesFilePath = section.Key("overrides_path").String()
+	cfg.OverridesReloadInterval = section.Key("overrides_reload_period").MustDuration(30 * time.Second)
+	cfg.EnforceQuotas = section.Key("enforce_quotas").MustBool(false)
+	cfg.QuotasErrorMessageSupportInfo = section.Key("quotas_error_message_support_info").MustString("Please contact your administrator to increase it.")
+
+	// garbage collection
+	cfg.EnableGarbageCollection = section.Key("garbage_collection_enabled").MustBool(false)
+	cfg.GarbageCollectionInterval = section.Key("garbage_collection_interval").MustDuration(15 * time.Minute)
+	cfg.GarbageCollectionBatchSize = section.Key("garbage_collection_batch_size").MustInt(100)
+	cfg.GarbageCollectionMaxAge = section.Key("garbage_collection_max_age").MustDuration(24 * time.Hour)
+	cfg.DashboardsGarbageCollectionMaxAge = section.Key("dashboards_garbage_collection_max_age").MustDuration(365 * 24 * time.Hour)
+
+	// use sqlkv (resource/sqlkv) instead of the sql backend (sql/backend) as the StorageServer
+	cfg.EnableSQLKVBackend = section.Key("enable_sqlkv_backend").MustBool(false)
+	// enable sqlkv backwards compatibility mode with sql/backend
+	cfg.EnableSQLKVCompatibilityMode = section.Key("enable_sqlkv_compatibility_mode").MustBool(true)
+
+	cfg.MaxFileIndexAge = section.Key("max_file_index_age").MustDuration(0)
+	cfg.MinFileIndexBuildVersion = section.Key("min_file_index_build_version").MustString("")
+}
+
+// enforceMigrationToUnifiedConfigs enforces configurations required to run migrated resources in mode 5
+// All migrated resources in MigratedUnifiedResources are set to mode 5 and unified search is enabled
+func (cfg *Cfg) enforceMigrationToUnifiedConfigs() {
+	section := cfg.Raw.Section("unified_storage")
+	cfg.EnableSearch = section.Key("enable_search").MustBool(true)
+	if !cfg.EnableSearch {
+		cfg.Logger.Info("Enforcing enable_search for unified storage")
+		section.Key("enable_search").SetValue("true")
+		cfg.EnableSearch = true
+	}
+	for resource, enabledByDefault := range MigratedUnifiedResources {
+		resourceCfg, ok := cfg.UnifiedStorage[resource]
+		if ok {
+			if !resourceCfg.EnableMigration {
+				cfg.Logger.Info("Resource migration disabled", "resource", resource)
+				continue
+			}
+			cfg.Logger.Info("Overriding unified storage config for migrated resource", "resource", resource, "old_config", resourceCfg)
+		} else if !enabledByDefault {
+			continue
+		}
+		cfg.Logger.Info("Enforcing mode 5 for resource in unified storage", "resource", resource)
+		cfg.UnifiedStorage[resource] = UnifiedStorageConfig{
+			DualWriterMode:         5,
+			EnableMigration:        true,
+			AutoMigrationThreshold: resourceCfg.AutoMigrationThreshold,
+		}
+	}
+}
+
+// UnifiedStorageType returns the configured storage type without creating or mutating keys.
+// Precedence: env > ini > default ("unified").
+// Used to decide unified storage behavior early without side effects.
+func (cfg *Cfg) UnifiedStorageType() string {
+	const (
+		grafanaAPIServerSectionName = "grafana-apiserver"
+		storageTypeKeyName          = "storage_type"
+		defaultStorageType          = "unified"
+	)
+	if envStorageType := (osutil.RealEnv{}).Getenv(EnvKey(grafanaAPIServerSectionName, storageTypeKeyName)); envStorageType != "" {
+		return envStorageType
+	}
+	if cfg.Raw.Section(grafanaAPIServerSectionName).HasKey(storageTypeKeyName) {
+		return cfg.Raw.Section(grafanaAPIServerSectionName).Key(storageTypeKeyName).Value()
+	}
+	return defaultStorageType
+}
+
+// UnifiedStorageConfig returns the UnifiedStorageConfig for a resource.
+func (cfg *Cfg) UnifiedStorageConfig(resource string) UnifiedStorageConfig {
+	if cfg.UnifiedStorage == nil {
+		return UnifiedStorageConfig{}
+	}
+	return cfg.UnifiedStorage[resource]
+}
+
+// EnableMode5 enables migration and sets mode 5 for a resource.
+func (cfg *Cfg) EnableMode5(resource string) {
+	if cfg.UnifiedStorage == nil {
+		cfg.UnifiedStorage = make(map[string]UnifiedStorageConfig)
+	}
+	config := cfg.UnifiedStorage[resource]
+	config.DualWriterMode = rest.Mode5
+	config.EnableMigration = true
+	cfg.UnifiedStorage[resource] = config
 }

@@ -6,28 +6,27 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/grafana/authlib/claims"
+	authlib "github.com/grafana/authlib/types"
 	"github.com/grafana/grafana/pkg/apimachinery/identity"
 	"github.com/grafana/grafana/pkg/services/accesscontrol"
 	"github.com/grafana/grafana/pkg/services/accesscontrol/acimpl"
-	"github.com/grafana/grafana/pkg/services/authz/zanzana"
 	"github.com/grafana/grafana/pkg/services/featuremgmt"
 )
 
-func TestLegacyAccessClient_HasAccess(t *testing.T) {
-	ac := acimpl.ProvideAccessControl(featuremgmt.WithFeatures(), zanzana.NewNoopClient())
+func TestLegacyAccessClient_Check(t *testing.T) {
+	ac := acimpl.ProvideAccessControl(featuremgmt.WithFeatures())
 
 	t.Run("should reject when when no configuration for resource exist", func(t *testing.T) {
 		a := accesscontrol.NewLegacyAccessClient(ac)
 
-		ok, err := a.HasAccess(context.Background(), &identity.StaticRequester{}, claims.AccessRequest{
+		res, err := a.Check(context.Background(), &identity.StaticRequester{}, authlib.CheckRequest{
 			Verb:      "get",
 			Resource:  "dashboards",
 			Namespace: "default",
 			Name:      "1",
-		})
+		}, "")
 		assert.NoError(t, err)
-		assert.Equal(t, false, ok)
+		assert.Equal(t, false, res.Allowed)
 	})
 
 	t.Run("should reject when user don't have correct scope", func(t *testing.T) {
@@ -43,15 +42,15 @@ func TestLegacyAccessClient_HasAccess(t *testing.T) {
 			accesscontrol.Permission{Action: "dashboards:read", Scope: "dashboards:uid:2"},
 		)
 
-		ok, err := a.HasAccess(context.Background(), ident, claims.AccessRequest{
+		res, err := a.Check(context.Background(), ident, authlib.CheckRequest{
 			Verb:      "get",
 			Namespace: "default",
 			Resource:  "dashboards",
 			Name:      "1",
-		})
+		}, "")
 
 		assert.NoError(t, err)
-		assert.Equal(t, false, ok)
+		assert.Equal(t, false, res.Allowed)
 	})
 
 	t.Run("should just check action for list requests", func(t *testing.T) {
@@ -67,14 +66,14 @@ func TestLegacyAccessClient_HasAccess(t *testing.T) {
 			accesscontrol.Permission{Action: "dashboards:read"},
 		)
 
-		ok, err := a.HasAccess(context.Background(), ident, claims.AccessRequest{
+		res, err := a.Check(context.Background(), ident, authlib.CheckRequest{
 			Verb:      "list",
 			Namespace: "default",
 			Resource:  "dashboards",
-		})
+		}, "")
 
 		assert.NoError(t, err)
-		assert.Equal(t, true, ok)
+		assert.Equal(t, true, res.Allowed)
 	})
 
 	t.Run("should allow when user have correct scope", func(t *testing.T) {
@@ -90,15 +89,15 @@ func TestLegacyAccessClient_HasAccess(t *testing.T) {
 			accesscontrol.Permission{Action: "dashboards:read", Scope: "dashboards:uid:1"},
 		)
 
-		ok, err := a.HasAccess(context.Background(), ident, claims.AccessRequest{
+		res, err := a.Check(context.Background(), ident, authlib.CheckRequest{
 			Verb:      "get",
 			Namespace: "default",
 			Resource:  "dashboards",
 			Name:      "1",
-		})
+		}, "")
 
 		assert.NoError(t, err)
-		assert.Equal(t, true, ok)
+		assert.Equal(t, true, res.Allowed)
 	})
 
 	t.Run("should skip authorization for configured verb", func(t *testing.T) {
@@ -115,25 +114,25 @@ func TestLegacyAccessClient_HasAccess(t *testing.T) {
 
 		ident := newIdent(accesscontrol.Permission{})
 
-		ok, err := a.HasAccess(context.Background(), ident, claims.AccessRequest{
+		res, err := a.Check(context.Background(), ident, authlib.CheckRequest{
 			Verb:      "get",
 			Namespace: "default",
 			Resource:  "dashboards",
 			Name:      "1",
-		})
+		}, "")
 
 		assert.NoError(t, err)
-		assert.Equal(t, true, ok)
+		assert.Equal(t, true, res.Allowed)
 
-		ok, err = a.HasAccess(context.Background(), ident, claims.AccessRequest{
+		res, err = a.Check(context.Background(), ident, authlib.CheckRequest{
 			Verb:      "create",
 			Namespace: "default",
 			Resource:  "dashboards",
 			Name:      "1",
-		})
+		}, "")
 
 		assert.NoError(t, err)
-		assert.Equal(t, false, ok)
+		assert.Equal(t, false, res.Allowed)
 	})
 }
 

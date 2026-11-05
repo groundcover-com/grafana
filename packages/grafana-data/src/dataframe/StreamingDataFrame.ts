@@ -420,9 +420,7 @@ export class StreamingDataFrame implements DataFrame {
   };
 
   getMatchingFieldIndexes = (fieldPredicate: (f: Field) => boolean): number[] =>
-    this.fields
-      .map((f, index) => (fieldPredicate(f) ? index : undefined))
-      .filter((val) => val !== undefined) as number[];
+    this.fields.map((f, index) => (fieldPredicate(f) ? index : undefined)).filter((val) => val !== undefined);
 
   getValuesFromLastPacket = (): unknown[][] =>
     this.fields.map((f) => {
@@ -550,8 +548,11 @@ export function parseLabelsFromField(str: string): Labels {
  * @internal // not exported in yet
  */
 export function getLastStreamingDataFramePacket(frame: DataFrame) {
-  const pi = (frame as StreamingDataFrame).packetInfo;
-  return pi?.action ? pi : undefined;
+  if (frame instanceof StreamingDataFrame) {
+    const pi = frame.packetInfo;
+    return pi.action;
+  }
+  return undefined;
 }
 
 // mutable circular push

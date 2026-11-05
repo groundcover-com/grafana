@@ -1,58 +1,24 @@
-import resolve from '@rollup/plugin-node-resolve';
 import { glob } from 'glob';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import path from 'path';
-import dts from 'rollup-plugin-dts';
-import esbuild from 'rollup-plugin-esbuild';
-import { nodeExternals } from 'rollup-plugin-node-externals';
+import copy from 'rollup-plugin-copy';
+
+import { cjsOutput, entryPoint, esmOutput, plugins } from '../rollup.config.parts';
 
 const rq = createRequire(import.meta.url);
 const pkg = rq('./package.json');
-
-const legacyOutputDefaults = {
-  esModule: true,
-  interop: 'compat',
-};
+const typePaths = backwardsCompatibilityTypeNames();
 
 export default [
   {
-    input: 'src/index.ts',
-    plugins: [
-      nodeExternals({ deps: true, packagePath: './package.json' }),
-      resolve(),
-      esbuild({
-        target: 'es2018',
-        tsconfig: 'tsconfig.build.json',
-      }),
-    ],
-    output: [
-      {
-        format: 'cjs',
-        sourcemap: true,
-        dir: path.dirname(pkg.publishConfig.main),
-        ...legacyOutputDefaults,
-      },
-      {
-        format: 'esm',
-        sourcemap: true,
-        dir: path.dirname(pkg.publishConfig.module),
-        preserveModules: true,
-        // @ts-expect-error (TS cannot assure that `process.env.PROJECT_CWD` is a string)
-        preserveModulesRoot: path.join(process.env.PROJECT_CWD, `packages/grafana-schema/src`),
-        ...legacyOutputDefaults,
-      },
-    ],
+    input: entryPoint,
+    plugins,
+    output: [cjsOutput(pkg, 'grafana-schema'), esmOutput(pkg, 'grafana-schema')],
+    treeshake: false,
   },
   {
-    input: './dist/esm/index.d.ts',
-    plugins: [dts()],
-    output: {
-      file: pkg.publishConfig.types,
-      format: 'es',
-    },
-  },
-  {
+    // Files that should be exported but not included in the `entryPoint`.
     input: Object.fromEntries(
       glob
         .sync('src/raw/composable/**/*.ts')
@@ -62,15 +28,44 @@ export default [
         ])
     ),
     plugins: [
-      resolve(),
-      esbuild({
-        target: 'es2018',
-        tsconfig: 'tsconfig.build.json',
+      ...plugins,
+      copy({
+        targets: [
+          {
+            src: 'dist/types/raw/composable/**/*.d.ts',
+            dest: 'dist/esm/raw/composable',
+            rename: (_name, _extension, fullpath) => {
+              const typePath = typePaths[fullpath] || fullpath;
+              return typePath.split(path.sep).slice(4).join('/');
+            },
+          },
+        ],
+        hook: 'writeBundle',
       }),
     ],
-    output: {
-      format: 'esm',
-      dir: path.dirname(pkg.publishConfig.module),
-    },
+    output: [
+      {
+        format: 'esm',
+        dir: path.dirname(pkg.module),
+        entryFileNames: '[name].mjs',
+      },
+      {
+        format: 'cjs',
+        dir: path.dirname(pkg.main),
+        entryFileNames: '[name].cjs',
+      },
+    ],
+    treeshake: false,
   },
 ];
+
+function backwardsCompatibilityTypeNames(): Record<string, string> {
+  return Object.keys(pkg.exports).reduce<Record<string, string>>((map, key) => {
+    const typesPath = pkg.exports[key].types;
+    if (!typesPath) {
+      return map;
+    }
+    map[path.normalize(typesPath)] = `${path.normalize(key)}.d.ts`;
+    return map;
+  }, {});
+}

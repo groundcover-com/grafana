@@ -11,6 +11,11 @@ title: Run Grafana Docker image
 weight: 400
 ---
 
+{{< admonition type="caution" >}}
+Starting with Grafana release `12.4.0` , the `grafana/grafana-oss` Docker Hub repository will no longer be updated.
+Instead, we encourage you to use the `grafana/grafana` Docker Hub repository. These two repositories have the same Grafana OSS docker images.
+{{< /admonition >}}
+
 # Run Grafana Docker image
 
 This topic guides you through installing Grafana via the official Docker images. Specifically, it covers running Grafana via the Docker command line interface (CLI) and docker-compose.
@@ -20,7 +25,7 @@ This topic guides you through installing Grafana via the official Docker images.
 Grafana Docker images come in two editions:
 
 - **Grafana Enterprise**: `grafana/grafana-enterprise`
-- **Grafana Open Source**: `grafana/grafana-oss`
+- **Grafana Open Source**: `grafana/grafana`
 
 > **Note:** The recommended and default edition of Grafana is Grafana Enterprise. It is free and includes all the features of the OSS edition. Additionally, you have the option to upgrade to the [full Enterprise feature set](/products/enterprise/?utm_source=grafana-install-page), which includes support for [Enterprise plugins](/grafana/plugins/?enterprise=1&utcm_source=grafana-install-page).
 
@@ -132,37 +137,37 @@ Grafana currently supports three types of plugins: panel, data source, and app. 
 
 To install plugins in the Docker container, complete the following steps:
 
-1. Pass the plugins you want to be installed to Docker with the `GF_INSTALL_PLUGINS` environment variable as a comma-separated list.
+1. Pass the plugins you want to be installed to Docker with the `GF_PLUGINS_PREINSTALL` environment variable as a comma-separated list.
 
-   This sends each plugin name to `grafana-cli plugins install ${plugin}` and installs them when Grafana starts.
+   This starts a background process that installs the list of plugins while Grafana server starts.
 
    For example:
 
    ```bash
    docker run -d -p 3000:3000 --name=grafana \
-     -e "GF_INSTALL_PLUGINS=grafana-clock-panel, grafana-simple-json-datasource" \
+     -e "GF_PLUGINS_PREINSTALL=grafana-clock-panel, grafana-simple-json-datasource" \
      grafana/grafana-enterprise
    ```
 
-1. To specify the version of a plugin, add the version number to the `GF_INSTALL_PLUGINS` environment variable.
+1. To specify the version of a plugin, add the version number to the `GF_PLUGINS_PREINSTALL` environment variable.
 
    For example:
 
    ```bash
    docker run -d -p 3000:3000 --name=grafana \
-     -e "GF_INSTALL_PLUGINS=grafana-clock-panel 1.0.1" \
+     -e "GF_PLUGINS_PREINSTALL=grafana-clock-panel@1.0.1" \
      grafana/grafana-enterprise
    ```
 
    > **Note:** If you do not specify a version number, the latest version is used.
 
-1. To install a plugin from a custom URL, use the following convention to specify the URL: `<url to plugin zip>;<plugin install directory name>`.
+1. To install a plugin from a custom URL, use the following convention to specify the URL: `<plugin ID>@[<plugin version>]@<url to plugin zip>`.
 
    For example:
 
    ```bash
    docker run -d -p 3000:3000 --name=grafana \
-     -e "GF_INSTALL_PLUGINS=https://github.com/VolkovLabs/custom-plugin.zip;custom-plugin" \
+     -e "GF_PLUGINS_PREINSTALL=custom-plugin@@https://github.com/VolkovLabs/custom-plugin.zip" \
      grafana/grafana-enterprise
    ```
 
@@ -180,7 +185,7 @@ docker volume create grafana-storage
 docker run -d -p 3000:3000 --name=grafana \
   --volume grafana-storage:/var/lib/grafana \
   -e "GF_SERVER_ROOT_URL=http://my.grafana.server/" \
-  -e "GF_INSTALL_PLUGINS=grafana-clock-panel" \
+  -e "GF_PLUGINS_PREINSTALL=grafana-clock-panel" \
   grafana/grafana-enterprise
 ```
 
@@ -220,14 +225,14 @@ To run the latest stable version of Grafana using Docker Compose, complete the f
 
    For example:
 
-   ```bash
+   ```yaml
    services:
      grafana:
        image: grafana/grafana-enterprise
        container_name: grafana
        restart: unless-stopped
        ports:
-        - '3000:3000'
+         - '3000:3000'
    ```
 
 1. To run `docker-compose.yaml`, run the following command:
@@ -347,24 +352,26 @@ To use bind mounts, complete the following steps:
 
 The following example runs the latest stable version of Grafana, listening on port 3000, with the container named `grafana`, persistent storage in the `grafana-storage` docker volume, the server root URL set, and the official [clock panel](/grafana/plugins/grafana-clock-panel/) plugin installed.
 
-```bash
+```yaml
 services:
   grafana:
     image: grafana/grafana-enterprise
     container_name: grafana
     restart: unless-stopped
     environment:
-     - GF_SERVER_ROOT_URL=http://my.grafana.server/
-     - GF_INSTALL_PLUGINS=grafana-clock-panel
+      - GF_SERVER_ROOT_URL=http://my.grafana.server/
+      - GF_PLUGINS_PREINSTALL=grafana-clock-panel
     ports:
-     - '3000:3000'
+      - '3000:3000'
     volumes:
-     - 'grafana_storage:/var/lib/grafana'
+      - 'grafana_storage:/var/lib/grafana'
 volumes:
   grafana_storage: {}
 ```
 
-> **Note:** If you want to specify the version of a plugin, add the version number to the `GF_INSTALL_PLUGINS` environment variable. For example: `-e "GF_INSTALL_PLUGINS=grafana-clock-panel 1.0.1,grafana-simple-json-datasource 1.3.5"`. If you do not specify a version number, the latest version is used.
+{{< admonition type="note" >}}
+If you want to specify the version of a plugin, add the version number to the `GF_PLUGINS_PREINSTALL` environment variable. For example: `-e "GF_PLUGINS_PREINSTALL=grafana-clock-panel@1.0.1,grafana-simple-json-datasource@1.3.5"`. If you do not specify a version number, the latest version is used.
+{{< /admonition >}}
 
 ## Next steps
 

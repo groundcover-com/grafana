@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openfga/openfga/assets"
+	openfgaconfig "github.com/openfga/openfga/pkg/server/config"
 	"github.com/openfga/openfga/pkg/storage"
 	"github.com/openfga/openfga/pkg/storage/mysql"
 	"github.com/openfga/openfga/pkg/storage/postgres"
@@ -31,7 +31,7 @@ func NewStore(cfg *setting.Cfg, logger log.Logger) (storage.OpenFGADatastore, er
 	switch grafanaDBCfg.Type {
 	case migrator.SQLite:
 		connStr := sqliteConnectionString(grafanaDBCfg.ConnectionString)
-		if err := migration.Run(cfg, migrator.SQLite, connStr, assets.EmbedMigrations, assets.SqliteMigrationDir); err != nil {
+		if err := migration.Run(cfg, migrator.SQLite, grafanaDBCfg, logger); err != nil {
 			return nil, fmt.Errorf("failed to run migrations: %w", err)
 		}
 
@@ -39,18 +39,18 @@ func NewStore(cfg *setting.Cfg, logger log.Logger) (storage.OpenFGADatastore, er
 	case migrator.MySQL:
 		// For mysql we need to pass parseTime parameter in connection string
 		connStr := grafanaDBCfg.ConnectionString + "&parseTime=true"
-		if err := migration.Run(cfg, migrator.MySQL, connStr, assets.EmbedMigrations, assets.MySQLMigrationDir); err != nil {
+		if err := migration.Run(cfg, migrator.MySQL, grafanaDBCfg, logger); err != nil {
 			return nil, fmt.Errorf("failed to run migrations: %w", err)
 		}
 
 		return mysql.New(connStr, zanzanaDBCfg)
 	case migrator.Postgres:
-		connStr := grafanaDBCfg.ConnectionString
-		if err := migration.Run(cfg, migrator.Postgres, connStr, assets.EmbedMigrations, assets.PostgresMigrationDir); err != nil {
+		// Parse and transform the connection string to the format OpenFGA expects
+		if err := migration.Run(cfg, migrator.Postgres, grafanaDBCfg, logger); err != nil {
 			return nil, fmt.Errorf("failed to run migrations: %w", err)
 		}
 
-		return postgres.New(connStr, zanzanaDBCfg)
+		return postgres.New(grafanaDBCfg.ConnectionString, zanzanaDBCfg)
 	}
 
 	// Should never happen
@@ -66,22 +66,19 @@ func NewEmbeddedStore(cfg *setting.Cfg, db db.DB, logger log.Logger) (storage.Op
 	switch grafanaDBCfg.Type {
 	case migrator.SQLite:
 		grafanaDBCfg.ConnectionString = sqliteConnectionString(grafanaDBCfg.ConnectionString)
-		if err := migration.Run(cfg, migrator.SQLite, grafanaDBCfg.ConnectionString, assets.EmbedMigrations, assets.SqliteMigrationDir); err != nil {
+		if err := migration.Run(cfg, migrator.SQLite, grafanaDBCfg, logger); err != nil {
 			return nil, fmt.Errorf("failed to run migrations: %w", err)
 		}
 
 		return sqlite.New(grafanaDBCfg.ConnectionString, zanzanaDBCfg)
 	case migrator.MySQL:
-		m := migrator.NewMigrator(db.GetEngine(), cfg)
-		if err := migration.RunWithMigrator(m, cfg, assets.EmbedMigrations, assets.MySQLMigrationDir); err != nil {
+		if err := migration.Run(cfg, migrator.MySQL, grafanaDBCfg, logger); err != nil {
 			return nil, fmt.Errorf("failed to run migrations: %w", err)
 		}
 
-		// For mysql we need to pass parseTime parameter in connection string
 		return mysql.New(grafanaDBCfg.ConnectionString+"&parseTime=true", zanzanaDBCfg)
 	case migrator.Postgres:
-		m := migrator.NewMigrator(db.GetEngine(), cfg)
-		if err := migration.RunWithMigrator(m, cfg, assets.EmbedMigrations, assets.PostgresMigrationDir); err != nil {
+		if err := migration.Run(cfg, migrator.Postgres, grafanaDBCfg, logger); err != nil {
 			return nil, fmt.Errorf("failed to run migrations: %w", err)
 		}
 
@@ -107,12 +104,28 @@ func parseConfig(cfg *setting.Cfg, logger log.Logger) (*sqlstore.DatabaseConfig,
 		MaxIdleConns:           grafanaDBCfg.MaxIdleConn,
 		ConnMaxLifetime:        time.Duration(grafanaDBCfg.ConnMaxLifetime) * time.Second,
 		ExportMetrics:          sec.Key("instrument_queries").MustBool(false),
+		// openfga's datastore constructors ping the database in a backoff.Retry
+		// loop. These fields are normally populated by openfga's NewConfig
+		// helper, but we build the Config struct directly, so we must set them
+		// ourselves. Leaving them at zero makes PingTimeout produce an
+		// already-expired context (every ping fails instantly) and
+		// PingRetryMaxElapsedTime map to backoff MaxElapsedTime=0, which retries
+		// forever and hangs startup.
+		PingTimeout:             openfgaconfig.DefaultDatastorePingTimeout,
+		PingRetryMaxElapsedTime: openfgaconfig.DefaultDatastorePingRetryMaxElapsedTime,
 	}
 
 	return grafanaDBCfg, zanzanaDBCfg, nil
 }
 
 func sqliteConnectionString(v string) string {
+	// handle test setup by replacing grafana-test with zanzana-test
+	if strings.Contains(v, "grafana-test/grafana-test") {
+		name := v[strings.LastIndex(v, "/")+1:]
+		name = strings.Replace(name, "grafana-test", "zanzana-test", 1)
+		return v[0:strings.LastIndex(v, "/")+1] + name
+	}
+
 	// hardcode zanzana.db for now
 	return v[0:strings.LastIndex(v, "/")+1] + "zanzana.db"
 }
