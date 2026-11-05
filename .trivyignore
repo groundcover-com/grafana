@@ -1,1 +1,6 @@
-# See https://aquasecurity.github.io/trivy/v0.48/docs/configuration/filtering/#trivyignore
+# github.com/grafana/tempo has no /v2 module path, so every commit Grafana can depend on is a
+# v1.5.1-0.<date> pseudo-version, which Trivy compares against the fixed 2.x releases.
+# Grafana only links tempo's protobuf types (pkg/tempopb) and TraceQL parser (pkg/traceql);
+# both CVEs are in the Tempo server (query frontend, status endpoint), which is not compiled in.
+CVE-2026-21728
+CVE-2026-28377
