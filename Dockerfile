@@ -16,7 +16,7 @@ ARG JS_SRC=js-builder
 # By using FROM instructions we can delegate dependency updates to dependabot
 FROM alpine:3.24.2 AS alpine-base
 FROM ubuntu:24.04 AS ubuntu-base
-FROM --platform=${JS_PLATFORM} golang:1.26.9-alpine AS go-builder-base
+FROM --platform=${JS_PLATFORM} golang:1.26.11-alpine AS go-builder-base
 FROM --platform=${JS_PLATFORM} node:24-alpine AS js-builder-base
 # Javascript build stage
 FROM --platform=${JS_PLATFORM} ${JS_IMAGE} AS js-builder
@@ -291,6 +291,7 @@ ENV GF_PLUGIN_DIR="/usr/share/grafana/plugins" \
     GF_PATHS_PLUGINS="/usr/share/grafana/plugins"
 
 RUN apt-get update && \
+    apt-get upgrade -y && \
     apt-get install -y unzip gpgv openssl libssl3 && \
     apt-get autoremove -y && \
     rm -rf /var/lib/apt/lists/*
