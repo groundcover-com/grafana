@@ -30,6 +30,9 @@ GO_LDFLAGS = -X main.version=$(BUILD_VERSION) \
 	$(if $(LDFLAGS),-extldflags \"$(LDFLAGS)\")
 GO_TEST_FLAGS += $(if $(GO_BUILD_TAGS),-tags=$(GO_BUILD_TAGS))
 GO_BUILD_DEV_ENABLED := $(filter 1 dev,$(GO_BUILD_DEV))
+ifeq ($(GO_BUILD_DEV_ENABLED),)
+GO_LDFLAGS += -w
+endif
 GO_BUILD_GCFLAGS_EFFECTIVE := $(if $(GO_BUILD_GCFLAGS),$(GO_BUILD_GCFLAGS),$(if $(GO_BUILD_DEV_ENABLED),all=-N -l))
 GO_BUILD_TRIMPATH_FLAG := $(if $(GO_BUILD_DEV_ENABLED),,-trimpath)
 GO_BUILD_ENV = \
