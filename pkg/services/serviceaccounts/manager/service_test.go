@@ -13,6 +13,7 @@ import (
 	"github.com/grafana/grafana/pkg/services/org"
 	"github.com/grafana/grafana/pkg/services/serviceaccounts"
 	"github.com/grafana/grafana/pkg/tests/testsuite"
+	"github.com/grafana/grafana/pkg/util/testutil"
 )
 
 type FakeServiceAccountStore struct {
@@ -35,7 +36,7 @@ func newServiceAccountStoreFake() *FakeServiceAccountStore {
 }
 
 // CreateServiceAccount is a fake creating a service account.
-func (f *FakeServiceAccountStore) RetrieveServiceAccount(ctx context.Context, orgID, serviceAccountID int64) (*serviceaccounts.ServiceAccountProfileDTO, error) {
+func (f *FakeServiceAccountStore) RetrieveServiceAccount(ctx context.Context, query *serviceaccounts.GetServiceAccountQuery) (*serviceaccounts.ServiceAccountProfileDTO, error) {
 	return f.ExpectedServiceAccountProfileDTO, f.ExpectedError
 }
 
@@ -73,11 +74,6 @@ func (f *FakeServiceAccountStore) DeleteServiceAccount(ctx context.Context, orgI
 // MigrateApiKeysToServiceAccounts is a fake migrating api keys to service accounts.
 func (f *FakeServiceAccountStore) MigrateApiKeysToServiceAccounts(ctx context.Context, orgID int64) (*serviceaccounts.MigrationResult, error) {
 	return f.expectedMigratedResults, f.ExpectedError
-}
-
-// MigrateApiKey is a fake migrating an api key to a service account.
-func (f *FakeServiceAccountStore) MigrateApiKey(ctx context.Context, orgID int64, keyId int64) error {
-	return f.ExpectedError
 }
 
 // RevertApiKey is a fake reverting an api key to a service account.
@@ -122,7 +118,9 @@ func TestMain(m *testing.M) {
 	testsuite.Run(m)
 }
 
-func TestProvideServiceAccount_DeleteServiceAccount(t *testing.T) {
+func TestIntegrationProvideServiceAccount_DeleteServiceAccount(t *testing.T) {
+	testutil.SkipIntegrationTestInShortMode(t)
+
 	storeMock := newServiceAccountStoreFake()
 	acSvc := actest.FakeService{}
 	pSvc := &actest.FakePermissionsService{}

@@ -17,7 +17,6 @@ import (
 	"github.com/grafana/grafana/pkg/services/accesscontrol/acimpl"
 	"github.com/grafana/grafana/pkg/services/auth/authtest"
 	"github.com/grafana/grafana/pkg/services/authn/authntest"
-	"github.com/grafana/grafana/pkg/services/authz/zanzana"
 	"github.com/grafana/grafana/pkg/services/featuremgmt"
 	"github.com/grafana/grafana/pkg/services/ldap"
 	"github.com/grafana/grafana/pkg/services/ldap/multildap"
@@ -70,7 +69,7 @@ func setupAPITest(t *testing.T, opts ...func(a *Service)) (*Service, *webtest.Se
 
 	a := ProvideService(cfg,
 		router,
-		acimpl.ProvideAccessControl(featuremgmt.WithFeatures(), zanzana.NewNoopClient()),
+		acimpl.ProvideAccessControl(featuremgmt.WithFeatures()),
 		usertest.NewUserServiceFake(),
 		&authinfotest.FakeService{},
 		ldap.ProvideGroupsService(),
@@ -579,8 +578,8 @@ search_base_dns = ["dc=grafana,dc=org"]`)
 		{
 			url:          "/api/admin/ldap/reload",
 			method:       http.MethodPost,
-			desc:         "ReloadLDAPCfg should return 200 for user with correct permissions",
-			expectedCode: http.StatusOK,
+			desc:         "ReloadLDAPCfg should return 410 Gone status code",
+			expectedCode: http.StatusGone,
 			permissions: []accesscontrol.Permission{
 				{Action: accesscontrol.ActionLDAPConfigReload},
 			},

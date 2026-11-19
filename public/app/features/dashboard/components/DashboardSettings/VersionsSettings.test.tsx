@@ -2,14 +2,52 @@ import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { render } from 'test/test-utils';
 
-import { historySrv } from 'app/features/dashboard-scene/settings/version-history/HistorySrv';
+import { VERSIONS_FETCH_LIMIT } from 'app/features/dashboard/types/revisionModels';
 
 import { createDashboardModelFixture } from '../../state/__fixtures__/dashboardFixtures';
 
-import { VersionsSettings, VERSIONS_FETCH_LIMIT } from './VersionsSettings';
-import { versions, diffs } from './__mocks__/versions';
+import { VersionsSettings } from './VersionsSettings';
+import { versionsResourceList } from './mocks/versions';
 
-jest.mock('app/features/dashboard-scene/settings/version-history/HistorySrv');
+const mockListDashboardHistory = jest.fn();
+
+jest.mock('app/features/dashboard/api/dashboard_api', () => ({
+  getDashboardAPI: () => ({
+    listDashboardHistory: mockListDashboardHistory,
+  }),
+}));
+
+const mockUseGetDisplayMappingQuery = jest.fn();
+
+jest.mock('app/api/clients/iam/v0alpha1', () => ({
+  useGetDisplayMappingQuery: (...args: unknown[]) => mockUseGetDisplayMappingQuery(...args),
+}));
+
+// all history resources for a dashboard share the dashboard's creationTimestamp, so it cannot
+// be used as the version date
+const DASHBOARD_CREATION_TIMESTAMP = '2020-01-15T12:00:00Z';
+
+function createHistoryResource(
+  version: number,
+  annotations: Record<string, string>,
+  creationTimestamp = DASHBOARD_CREATION_TIMESTAMP
+) {
+  return {
+    apiVersion: 'v1beta1',
+    kind: 'Dashboard',
+    metadata: {
+      name: '_U4zObQMz',
+      generation: version,
+      creationTimestamp,
+      annotations,
+    },
+    spec: { version },
+  };
+}
+
+function historyList(items: Array<ReturnType<typeof createHistoryResource>>) {
+  return { metadata: { continue: '' }, items };
+}
 
 const queryByFullText = (text: string) =>
   screen.queryByText((_, node: Element | undefined | null) => {
@@ -26,8 +64,6 @@ function setup() {
   const dashboard = createDashboardModelFixture({
     id: 74,
     version: 11,
-    // formatDate: jest.fn(() => 'date'),
-    // getRelativeTime: jest.fn(() => 'time ago'),
   });
 
   const sectionNav = {
@@ -48,6 +84,7 @@ describe('VersionSettings', () => {
     // see https://github.com/testing-library/user-event/issues/833
     user = userEvent.setup({ delay: null });
     jest.clearAllMocks();
+    mockUseGetDisplayMappingQuery.mockReturnValue({ data: undefined });
     jest.useFakeTimers();
   });
 
@@ -56,8 +93,7 @@ describe('VersionSettings', () => {
   });
 
   test('renders a header and a loading indicator followed by results in a table', async () => {
-    // @ts-ignore
-    historySrv.getHistoryList.mockResolvedValue(versions);
+    mockListDashboardHistory.mockResolvedValue(versionsResourceList);
     setup();
 
     expect(screen.getByRole('heading', { name: /versions/i })).toBeInTheDocument();
@@ -66,7 +102,7 @@ describe('VersionSettings', () => {
     await waitFor(() => expect(screen.getByRole('table')).toBeInTheDocument());
     const tableBodyRows = within(screen.getAllByRole('rowgroup')[1]).getAllByRole('row');
 
-    expect(tableBodyRows.length).toBe(versions.length);
+    expect(tableBodyRows.length).toBe(versionsResourceList.items.length);
 
     const firstRow = within(screen.getAllByRole('rowgroup')[1]).getAllByRole('row')[0];
 
@@ -75,8 +111,11 @@ describe('VersionSettings', () => {
   });
 
   test('does not render buttons if versions === 1', async () => {
-    // @ts-ignore
-    historySrv.getHistoryList.mockResolvedValue(versions.slice(0, 1));
+    mockListDashboardHistory.mockResolvedValue({
+      metadata: { continue: '' },
+      items: versionsResourceList.items.slice(0, 1),
+    });
+
     setup();
 
     expect(screen.queryByRole('button', { name: /show more versions/i })).not.toBeInTheDocument();
@@ -89,8 +128,11 @@ describe('VersionSettings', () => {
   });
 
   test('does not render show more button if versions < VERSIONS_FETCH_LIMIT', async () => {
-    // @ts-ignore
-    historySrv.getHistoryList.mockResolvedValue(versions.slice(0, VERSIONS_FETCH_LIMIT - 5));
+    mockListDashboardHistory.mockResolvedValue({
+      metadata: { continue: '' },
+      items: versionsResourceList.items.slice(0, VERSIONS_FETCH_LIMIT - 5),
+    });
+
     setup();
 
     expect(screen.queryByRole('button', { name: /show more versions/i })).not.toBeInTheDocument();
@@ -103,8 +145,11 @@ describe('VersionSettings', () => {
   });
 
   test('renders buttons if versions >= VERSIONS_FETCH_LIMIT', async () => {
-    // @ts-ignore
-    historySrv.getHistoryList.mockResolvedValue(versions.slice(0, VERSIONS_FETCH_LIMIT));
+    mockListDashboardHistory.mockResolvedValue({
+      metadata: { continue: 'next-page-token' },
+      items: versionsResourceList.items.slice(0, VERSIONS_FETCH_LIMIT),
+    });
+
     setup();
 
     expect(screen.queryByRole('button', { name: /show more versions/i })).not.toBeInTheDocument();
@@ -122,16 +167,23 @@ describe('VersionSettings', () => {
   });
 
   test('clicking show more appends results to the table', async () => {
-    historySrv.getHistoryList
-      // @ts-ignore
-      .mockImplementationOnce(() => Promise.resolve(versions.slice(0, VERSIONS_FETCH_LIMIT)))
-      .mockImplementationOnce(
-        () => new Promise((resolve) => setTimeout(() => resolve(versions.slice(VERSIONS_FETCH_LIMIT)), 1000))
+    mockListDashboardHistory
+      .mockImplementationOnce(() =>
+        Promise.resolve({
+          metadata: { continue: 'next-page-token' },
+          items: versionsResourceList.items.slice(0, VERSIONS_FETCH_LIMIT),
+        })
+      )
+      .mockImplementationOnce(() =>
+        Promise.resolve({
+          metadata: { continue: '' },
+          items: versionsResourceList.items.slice(VERSIONS_FETCH_LIMIT),
+        })
       );
 
     setup();
 
-    expect(historySrv.getHistoryList).toBeCalledTimes(1);
+    expect(mockListDashboardHistory).toHaveBeenCalledTimes(1);
 
     await waitFor(() => expect(screen.getByRole('table')).toBeInTheDocument());
 
@@ -140,27 +192,59 @@ describe('VersionSettings', () => {
     const showMoreButton = screen.getByRole('button', { name: /show more versions/i });
     await user.click(showMoreButton);
 
-    expect(historySrv.getHistoryList).toBeCalledTimes(2);
+    expect(mockListDashboardHistory).toHaveBeenCalledTimes(2);
     expect(screen.getByText(/Fetching more entries/i)).toBeInTheDocument();
     jest.advanceTimersByTime(1000);
 
     await waitFor(() => {
       expect(screen.queryByText(/Fetching more entries/i)).not.toBeInTheDocument();
-      expect(within(screen.getAllByRole('rowgroup')[1]).getAllByRole('row').length).toBe(versions.length);
+      expect(within(screen.getAllByRole('rowgroup')[1]).getAllByRole('row').length).toBe(
+        versionsResourceList.items.length
+      );
     });
   });
 
-  test('selecting two versions and clicking compare button should render compare view', async () => {
-    // @ts-ignore
-    historySrv.getHistoryList.mockResolvedValue(versions.slice(0, VERSIONS_FETCH_LIMIT));
-    historySrv.getDashboardVersion
-      // @ts-ignore
-      .mockImplementationOnce(() => Promise.resolve(diffs.lhs))
-      .mockImplementationOnce(() => Promise.resolve(diffs.rhs));
+  test('does not show more button when receiving partial page without version 1', async () => {
+    // Mock a partial page response (less than VERSIONS_FETCH_LIMIT)
+    mockListDashboardHistory.mockResolvedValueOnce({
+      metadata: { continue: '' },
+      items: versionsResourceList.items.slice(0, VERSIONS_FETCH_LIMIT - 5),
+    });
 
     setup();
 
-    expect(historySrv.getHistoryList).toBeCalledTimes(1);
+    await waitFor(() => expect(screen.getByRole('table')).toBeInTheDocument());
+
+    // Verify that show more button is not present since we got a partial page
+    expect(screen.queryByRole('button', { name: /show more versions/i })).not.toBeInTheDocument();
+    // Verify that compare button is still present
+    expect(screen.getByRole('button', { name: /compare versions/i })).toBeInTheDocument();
+  });
+
+  test('does not show more button when continueToken is empty', async () => {
+    mockListDashboardHistory.mockResolvedValueOnce({
+      metadata: { continue: '' },
+      items: versionsResourceList.items.slice(0, VERSIONS_FETCH_LIMIT - 1),
+    });
+
+    setup();
+
+    await waitFor(() => expect(screen.getByRole('table')).toBeInTheDocument());
+
+    expect(screen.queryByRole('button', { name: /show more versions/i })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /compare versions/i })).toBeInTheDocument();
+  });
+
+  test('selecting two versions and clicking compare button should render compare view', async () => {
+    // getDiff now uses already-loaded data from versionsResourceList, no separate API call needed
+    mockListDashboardHistory.mockResolvedValue({
+      metadata: { continue: '' },
+      items: versionsResourceList.items.slice(0, VERSIONS_FETCH_LIMIT),
+    });
+
+    setup();
+
+    expect(mockListDashboardHistory).toHaveBeenCalledTimes(1);
 
     await waitFor(() => expect(screen.getByRole('table')).toBeInTheDocument());
 
@@ -195,5 +279,174 @@ describe('VersionSettings', () => {
     await user.click(screen.getByText(/view json diff/i));
 
     await waitFor(() => expect(screen.getByRole('table')).toBeInTheDocument());
+  });
+
+  describe('version dates', () => {
+    test('uses the updatedTimestamp annotation rather than the shared dashboard creationTimestamp', async () => {
+      mockListDashboardHistory.mockResolvedValue(
+        historyList([
+          createHistoryResource(2, {
+            'grafana.app/updatedTimestamp': '2024-06-10T12:00:00Z',
+            'grafana.app/updatedBy': 'user:uid-editor',
+          }),
+          createHistoryResource(1, {
+            'grafana.app/updatedTimestamp': '2023-02-20T12:00:00Z',
+            'grafana.app/updatedBy': 'user:uid-editor',
+          }),
+        ])
+      );
+
+      setup();
+
+      await waitFor(() => expect(screen.getByRole('table')).toBeInTheDocument());
+
+      const rows = within(screen.getAllByRole('rowgroup')[1]).getAllByRole('row');
+
+      expect(rows[0]).toHaveTextContent('2024-06-10');
+      expect(rows[1]).toHaveTextContent('2023-02-20');
+      expect(screen.queryByText(/2020-01-15/)).not.toBeInTheDocument();
+    });
+
+    test('falls back to creationTimestamp when the version has no updatedTimestamp', async () => {
+      mockListDashboardHistory.mockResolvedValue(
+        historyList([createHistoryResource(1, { 'grafana.app/updatedBy': 'user:uid-editor' }, '2021-11-03T12:00:00Z')])
+      );
+
+      setup();
+
+      await waitFor(() => expect(screen.getByRole('table')).toBeInTheDocument());
+
+      const rows = within(screen.getAllByRole('rowgroup')[1]).getAllByRole('row');
+
+      expect(rows[0]).toHaveTextContent('2021-11-03');
+    });
+  });
+
+  describe('updated by display names', () => {
+    test('resolves identity keys to display names by identity, not by array index', async () => {
+      mockListDashboardHistory.mockResolvedValue(
+        historyList([
+          createHistoryResource(2, {
+            'grafana.app/updatedTimestamp': '2024-06-10T12:00:00Z',
+            'grafana.app/updatedBy': 'user:uid-ryan',
+          }),
+          createHistoryResource(1, {
+            'grafana.app/updatedTimestamp': '2024-06-09T12:00:00Z',
+            'grafana.app/updatedBy': 'user:uid-bhaskar',
+          }),
+        ])
+      );
+
+      mockUseGetDisplayMappingQuery.mockReturnValue({
+        data: {
+          keys: ['user:uid-ryan', 'user:uid-bhaskar'],
+          display: [
+            { identity: { type: 'user', name: 'uid-bhaskar' }, displayName: 'Bhaskar Surroy' },
+            { identity: { type: 'user', name: 'uid-ryan' }, displayName: 'Ryan Brown' },
+          ],
+        },
+      });
+
+      setup();
+
+      await waitFor(() => expect(screen.getByRole('table')).toBeInTheDocument());
+
+      const rows = within(screen.getAllByRole('rowgroup')[1]).getAllByRole('row');
+
+      expect(rows[0]).toHaveTextContent('Ryan Brown');
+      expect(rows[1]).toHaveTextContent('Bhaskar Surroy');
+      expect(screen.queryByText('user:uid-ryan')).not.toBeInTheDocument();
+      expect(screen.queryByText('user:uid-bhaskar')).not.toBeInTheDocument();
+    });
+
+    test('resolves the legacy numeric internalId when that is what the annotation holds', async () => {
+      mockListDashboardHistory.mockResolvedValue(
+        historyList([
+          createHistoryResource(1, {
+            'grafana.app/updatedTimestamp': '2024-06-10T12:00:00Z',
+            'grafana.app/updatedBy': '3420',
+          }),
+        ])
+      );
+
+      mockUseGetDisplayMappingQuery.mockReturnValue({
+        data: {
+          keys: ['3420'],
+          display: [{ identity: { type: 'user', name: 'uid-ivan' }, displayName: 'Ivan Ortega', internalId: 3420 }],
+        },
+      });
+
+      setup();
+
+      await waitFor(() => expect(screen.getByRole('table')).toBeInTheDocument());
+
+      expect(screen.getByText('Ivan Ortega')).toBeInTheDocument();
+    });
+
+    test('falls back to the createdBy annotation when the version has no updatedBy', async () => {
+      mockListDashboardHistory.mockResolvedValue(
+        historyList([
+          createHistoryResource(1, {
+            'grafana.app/updatedTimestamp': '2024-06-10T12:00:00Z',
+            'grafana.app/createdBy': 'user:uid-creator',
+          }),
+        ])
+      );
+
+      mockUseGetDisplayMappingQuery.mockReturnValue({
+        data: {
+          keys: ['user:uid-creator'],
+          display: [{ identity: { type: 'user', name: 'uid-creator' }, displayName: 'Creator User' }],
+        },
+      });
+
+      setup();
+
+      await waitFor(() => expect(screen.getByRole('table')).toBeInTheDocument());
+
+      expect(screen.getByText('Creator User')).toBeInTheDocument();
+    });
+
+    test('keeps the raw key when the user no longer exists', async () => {
+      mockListDashboardHistory.mockResolvedValue(
+        historyList([
+          createHistoryResource(1, {
+            'grafana.app/updatedTimestamp': '2024-06-10T12:00:00Z',
+            'grafana.app/updatedBy': 'user:uid-unknown',
+          }),
+        ])
+      );
+
+      mockUseGetDisplayMappingQuery.mockReturnValue({
+        data: { keys: ['user:uid-unknown'], display: [], invalidKeys: ['user:uid-unknown'] },
+      });
+
+      setup();
+
+      await waitFor(() => expect(screen.getByRole('table')).toBeInTheDocument());
+
+      expect(screen.getByText('user:uid-unknown')).toBeInTheDocument();
+    });
+
+    test('requests the display mapping once per unique identity key', async () => {
+      mockListDashboardHistory.mockResolvedValue(
+        historyList([
+          createHistoryResource(2, {
+            'grafana.app/updatedTimestamp': '2024-06-10T12:00:00Z',
+            'grafana.app/updatedBy': 'user:uid-editor',
+          }),
+          createHistoryResource(1, {
+            'grafana.app/updatedTimestamp': '2024-06-09T12:00:00Z',
+            'grafana.app/updatedBy': 'user:uid-editor',
+          }),
+        ])
+      );
+
+      setup();
+
+      await waitFor(() => expect(screen.getByRole('table')).toBeInTheDocument());
+
+      expect(mockUseGetDisplayMappingQuery).toHaveBeenLastCalledWith({ key: ['user:uid-editor'] });
+    });
   });
 });

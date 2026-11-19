@@ -13,7 +13,7 @@ export function getFilterTableStyles(theme: GrafanaTheme2) {
       borderCollapse: 'separate',
 
       tbody: {
-        'tr:nth-child(odd)': {
+        'tr:nth-of-type(odd)': {
           background: theme.colors.emphasize(theme.colors.background.primary, 0.02),
         },
       },
@@ -66,7 +66,7 @@ export function getFilterTableStyles(theme: GrafanaTheme2) {
       '.filter-table__avatar': {
         width: '25px',
         height: '25px',
-        borderRadius: '50%',
+        borderRadius: theme.shape.radius.circle,
       },
 
       '&--hover': {

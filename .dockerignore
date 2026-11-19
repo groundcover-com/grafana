@@ -4,8 +4,11 @@
 .gitignore
 .vscode
 bin
+!bin/grafana-linux-k8s
+!bin/grafana-linux-k8s-debug
 data*
 dist
+!dist/*.tar.gz
 docker
 Dockerfile
 docs
