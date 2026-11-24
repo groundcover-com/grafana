@@ -275,14 +275,21 @@ ENTRYPOINT [ "/run.sh" ]
 # Use --target=final-ubuntu to build the ubuntu variant instead.
 FROM final-alpine
 
-# groundcover image: upstream ubuntu image with this build's binaries and bundled plugins.
-# Kept as the last stage so builds without --target produce it (CI also passes target: groundcover).
-FROM grafana/grafana:${GF_VERSION}-ubuntu AS groundcover
+FROM grafana/grafana:${GF_VERSION}-ubuntu AS upstream-ubuntu
 
-COPY --from=go-src /tmp/grafana/bin/grafana* /tmp/grafana/bin/*/grafana* ./bin/
-COPY --from=js-src /tmp/grafana/public ./public
+# groundcover image: this build's Ubuntu runtime with the bundled plugins.
+# Kept as the last stage so builds without --target produce it (CI also passes target: groundcover).
+FROM final-ubuntu AS groundcover
 
 USER 0
+
+COPY --from=upstream-ubuntu /run.sh /.grafana-version /
+COPY --from=upstream-ubuntu /usr/share/grafana/conf ./conf
+COPY --from=upstream-ubuntu /usr/share/grafana/LICENSE ./
+
+# Keep assets served at upstream URLs that the fork's frontend build doesn't emit.
+RUN --mount=type=bind,from=upstream-ubuntu,source=/usr/share/grafana/public,target=/tmp/upstream-public \
+    tar -C /tmp/upstream-public -cf - . | tar -C ./public --skip-old-files -xpf -
 
 ARG TARGETARCH
 ARG GF_UID="472"
