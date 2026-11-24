@@ -318,7 +318,7 @@ func (moa *MultiOrgAlertmanager) LoadAndSyncAlertmanagersForOrgs(ctx context.Con
 
 	// Then, sync them by creating or deleting Alertmanagers as necessary.
 	moa.metrics.DiscoveredConfigurations.Set(float64(len(orgIDs)))
-	moa.SyncAlertmanagersForOrgs(ctx, orgIDs)
+	moa.gcSyncAlertmanagersForOrgs(ctx, orgIDs)
 
 	moa.logger.Debug("Done synchronizing Alertmanagers for orgs")
 
